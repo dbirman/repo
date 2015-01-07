@@ -1,0 +1,481 @@
+---
+title: "birman_daniel_hw3"
+author: "Dan Birman"
+date: "Friday, October 17, 2014"
+output: html_document
+---
+
+```{r}
+rm(list=setdiff(ls(), "reset"))
+library(ggplot2)
+library(reshape)
+pp = function(x) {round(x, digits=3)}
+p = function(x) {round(x, digits=2)}
+## APA Format Printing
+## Author: Dan Birman
+## 10/13/2014
+
+apaprint = function(stat_obj, coefs=c(), stars=F) {
+  so = class(stat_obj)
+  if (length(so) > 1) {so = so[1]}
+  switch(so,
+         "htest" = phtest(stat_obj,stars),
+         "lm" = .plm(stat_obj,coefs,stars),
+         "glm" = .pglm(stat_obj,coefs,stars))
+}
+
+.pglm = function(s,coefs,stars) {
+  #Warning this defaults 
+  if (length(coefs)==0) {coefs = dimnames(summary(s)$coefficients)[[1]][2]}
+  out_s = .lin_mod_coefs(s,coefs,stars)
+  out_s
+}
+
+.plm = function(s,coefs,stars) {
+  sm = summary(s)
+  out_s = .lin_mod_coefs(s,coefs,stars)
+  if (length(coefs)>=1) {paste(out_s,", ",sep="")}
+  #Everything standard
+  f = sm$fstatistic
+  p = pf(f[1],f[2],f[3],lower.tail=F)
+  r2 = sm$r.squared
+  if (length(coefs)>0) {
+  return(sprintf("%s$;  F_{(%.0f, %.0f)} = %.2f, %s, adj. R^2 = %.2f$",out_s,f[2],f[3],f[1],.pformat(p,stars),r2))
+  }
+  return(sprintf("$F_{(%.0f, %.0f)} = %.2f, %s, adj. R^2 = %.2f$",f[2],f[3],f[1],.pformat(p,stars),r2))
+}
+
+.lin_mod_coefs = function(s,coefs,stars) {
+  sm = summary(s)
+  co_s = c()
+  if (length(coefs) >= 1) {
+    for (i in 1:length(coefs)) {
+      cur = coefs[i]
+      dat = sm$coefficients[cur,]
+      p = dat[4]
+      ci = confint(s,cur)
+      if (i > 1) {co_s = paste(", ",co_s,sep="")}
+      co_s = paste(sprintf("$b_{%s} = %.2f, [%.2f %.2f], %s$",cur,dat[1],ci[1],ci[2],.pformat(p,stars)),co_s,sep = "")
+    }
+  }
+  if (length(co_s)==0) {co_s = ""}
+  co_s
+}
+
+.pformat = function(pv,stars) {
+  if (stars==T) {
+    if (pv >= .05) {return(sprintf("p = %.3f",pv))}
+    if (pv >= .01) {return(sprintf("p = %.3f *",pv))}
+    if (pv >= .001) {return(sprintf("p = %.3f **",pv))}
+    return("p < 0.001 ***")
+  }
+  if (pv >= .05) {return(sprintf("p = %.3f",pv))}
+  if (pv >= .01) {return(sprintf("p = %.3f",pv))}
+  if (pv >= .001) {return(sprintf("p = %.3f",pv))}
+  return("p < 0.001")
+}
+
+phtest = function(s,stars) {
+  switch(s["method"]$method,
+         "One Sample t-test" = .pttest(s,stars),
+         "Welch Two Sample t-test" = .pttest(s,stars),
+         "Pearson's Chi-squared test" = .pchisqp(s,stars),
+         "Pearson's Chi-squared test with Yates' continuity correction" = .pchisqp(s,stars),
+         "Chi-squared test for given probabilities" = .pchisqp(s,stars),
+         "One-way analysis of means (not assuming equal variances)" = .panova(s,stars),
+         "Pearson's product-moment correlation" = .pcorr(s,stars)
+  )
+}
+
+.panova = function(s,stars) {
+  .basicprint(s,"F",stars)
+}
+
+.pchisqp = function(s,stars) {
+  sprintf("$\\chi^2$(%.0f, N = %.0f) = %.2f, %s",s$parameter,s$parameter+1,s$statistic,.pformat(s$p.value,stars))
+}
+
+.pcorr = function(s,stars) {
+  sprintf("*r* (%.0f) = %.2f, %s",s$parameter,s$estimate,.pformat(s$p.value,stars))
+}
+
+.pttest = function(s,stars) {
+  .basicprint(s,"t",stars)
+}
+
+.basicprint = function(s,st,stars) {
+  sprintf("*%s* (%.0f) = %.2f, %s",st,s$parameter,s$statistic,.pformat(s$p.value,stars))
+}
+```
+
+###Aa
+
+Compute the correlation between depress and event, and test for significance.
+
+```{r}
+st = data.frame(xbar=3.0,ybar=3.8,SSx=134.4,SSy=401.1,SPxy=55.2,n=100)
+r = st$SPxy / sqrt(st$SSy * st$SSx)
+
+t_r = r * sqrt((st$n-2)/(1-r^2))
+pv = pt(t_r,df=st$n-2,lower.tail=F)
+```
+
+It looks like the correlation we found of $r_{`r st$n-2`} = `r p(r)`, *p* = `r pp(pv)`$.
+
+###Ab
+
+Calcluating equation
+```{r}
+b = st$SPxy / st$SSx # Slope
+a = st$ybar - b*st$xbar # Intercept
+```
+
+The regression equation was found to be $D = `r p(a)` + `r p(b)`*E$.
+
+###Ac
+
+SE calculation.
+```{r}
+se_est = sqrt((1-r^2) * st$SSy / (st$n-2))
+```
+
+$SE_{est} = `r p(se_est)`$
+
+###Ad
+
+Computing estimate of D for E=5
+```{r}
+x = 5
+yv = a + b*x
+ci_yv = c((yv-se_est*qt(.95,st$n-1)), (yv+se_est*qt(.95,st$n-1)))
+```
+
+$95\% CI for Depress(Event=5) = [`r p(ci_yv)`]$
+
+###Ae
+
+r(event,depress) = .238
+r(depress,coping) = -.197
+r(event,coping) = .247
+
+Depression ratings increased with the number of stressful events in the past year. Ability to cope decreased when depression ratings increased. Although r(event,coping) is positive, there is evidence of a non-linear relationship in which for low and very high numbers of stressful events there is high coping, but at intermediate numbers there is a drop. We would need to test further to check this relationship.
+
+###E
+
+```{r}
+reset()
+T = as.table(matrix(c(47,86,227,132,53,49,62,28,44,83,14,9),nrow=4,ncol=3,byrow=T))
+dimnames(T)[[1]] = c("Males, +test","Males, -test","Fem, +test","Fem, -test")
+dimnames(T)[[2]] = c("0","1","Multi")
+mT = addmargins(T)
+print(mT)
+```
+
+###E1a
+
+P(Male) = Males / Females = 594 / 834
+```{r}
+p_male = 594/834
+```
+
+$P(Male) = `r p(p_male)`$
+
+###E1b
+
+P(+Test | Male) = P(+Test and Male) / P(Male) = (360 / 834) / ((360+234) / 834)
+```{r}
+p_pos_m = (360 / 834) / ((360+234) / 834)
+```
+
+$P(+Test | Male) = `r p(p_pos_m)`$
+
+P(+Test | Female) = (134/834) / ((134+106)/834)
+```{r}
+p_pos_f = (134/834) / ((134+106)/834)
+```
+
+$P(+Test | Female) = `r p(p_pos_f)`$
+
+###E1c
+
+Men and women appear to get positive test results at approximately the same rate, although Men have an overall higher rate of disease.
+
+It looks like being male means you also have a higher chance of receiving a positive test result, the effect is quite large.
+
+###E2
+
+We can first check whether there is a consistent effect for test result and health, i.e. are they dependent.
+
+```{r}
+mT = as.table(matrix(c(47,86+227,132,53+49),nrow=2,ncol=2,byrow=T))
+dimnames(mT)[[1]] = c("+","-")
+dimnames(mT)[[2]] = c("Healthy","Diseased")
+fT = as.table(matrix(c(62,28+44,83,14+9),nrow=2,ncol=2,byrow=T))
+dimnames(fT)[[1]] = c("+","-")
+dimnames(fT)[[2]] = c("Healthy","Diseased")
+
+mmT = addmargins(mT)
+mfT = addmargins(fT)
+print(mmT)
+print(mfT)
+rsm = chisq.test(mT)
+rsf = chisq.test(fT)
+```
+
+It looks like there is a relationship for both males, `r apaprint(rsm)`, and females, `r apaprint(rsf)`. Looking at the tables we can see that the test seems to more diagnostic for males than females, a positive result is strongly correlated with disease for males but not as strongly for females, on the other hand a negative result is strongly correlated with health for females but not as strongly for males.
+
+We want to know whether the effect size for this result changes between males and females.
+
+```{r}
+library(psych)
+phm = phi(mT)
+phf = phi(fT)
+```
+
+It does appear that effect sizes are different. $\phi_{male} = `r p(phm)`$, $\phi_{female} = `r p(phf)`$.
+
+###G
+
+Set up the population statistics
+```{r}
+reset()
+sigma = 2
+mu = NULL
+n = 96
+alpha = .05
+delta = .4 ## Difference of means ##
+alt = 'one.sided'
+type = 'one.sample'
+pow = power.t.test(n=96,delta=delta,sd=sigma,alternative=alt,type=type)$power
+```
+
+The power of this experiment to differentiate between $H_0: \mu = 4.0$ and $H_1: \mu = 4.4$ is $power = `r p(pow)`$
+
+Visualization:
+
+```{r}
+se = sigma/sqrt(n)
+x = seq(2,7,.01)
+d0 = dnorm(x,mean=4.0,sd=se)
+d1 = dnorm(x,mean=4.4,sd=se)
+dat = data.frame(null=d0,alt=d1,x=x)
+val_0 = qnorm(.05,mean=4.0,sd=se,lower.tail=F)
+ggplot() + 
+geom_line(data=dat,aes(x,null,color="red")) +
+geom_line(data=dat,aes(x,alt,color="green")) +
+xlab("Values") + ylab("Density") +
+geom_vline(xintercept=val_0,color="blue") +
+geom_ribbon(aes(x=dat$x[dat$x>val_0],ymin=0,ymax=dat$null[dat$x>val_0]),alpha=0.2,fill="darkred") +
+geom_ribbon(aes(x=dat$x[dat$x>val_0],ymin=0,ymax=dat$alt[dat$x>val_0]),alpha=0.2,fill="51") +
+scale_color_manual(name="Hypothesis",values=c("red"="red","green"="green"),labels=c("Alternative","Null"))
+```
+
+###J
+
+Time variable representing improvement (change) before / after treatment
+
+```{r}
+reset()
+dbar = 1.5
+s_d = 3.4
+n=25
+prop_pos = 18/25
+se_d = 3.4 / sqrt(25)
+ci = c(dbar-se_d*qt(.95,24),dbar+se_d*qt(.95,24))
+```
+
+###Jab
+
+```{r}
+t = dbar / se_d
+pv = 2*pt(t,n,lower.tail=F) #2 for two-sided
+```
+
+We standardized $\bar{d}$ and tested for the null $H_0: \mu = 0$. Our sample mean ($M = `r p(dbar)`$) has a confidence interval that does not include 0, , so we reject the null hypothesis, $t = `r p(t)`$, $p = `r pp(pv)`$.
+
+###Jb
+
+90% CI [`r p(ci)`]
+
+###Jc
+
+we know that 18/25 samples were positive, let's see what the probability of that is if *p* is .5
+
+```{r}
+prob = 2*pbinom(17,25,.5,lower.tail=F)
+```
+
+We tested $H_0: P(Improvement) = .5$ for our sample and found *p* = `r pp(prob)`, rejecting the null hypothesis.
+
+###Jd
+
+Using the approximate margin of error $1 / \sqrt{n}$ we calculated a confidence interval, CI [`r c(p(prop_pos - (1/sqrt(n))), p(prop_pos + (1/sqrt(n))))`].
+
+###Je
+
+In a binomial distribution we use the $\chi^2$ distribution to model the variance. We want to know the 90% CI for the variance of improvement ($d_i$)
+
+```{r}
+# Remember that SS/var ~= chisq(n)
+SS = s_d^2 * (n-1)
+q1 = qchisq(.05,n-1)
+q2 = qchisq(.95,n-1)
+v2 = SS/q1
+v1 = SS/q2
+```
+
+The confidence interval was found to be [`r c(p(v1), p(v2))`]
+
+###J(B)e
+
+```{r}
+reset()
+n1 = 10
+xb1 = 11.1
+SS1 = 130
+v1 = SS1/(n1-1)
+s1 = sqrt(v1)
+
+n2 = 7
+xb2 = 13.9
+SS2 = 95
+v2 = SS2/(n2-1)
+s2 = sqrt(v2)
+
+df = n1+n2-2
+pvar = (SS1 + SS2) / df
+```
+
+The pooled variance is `r p(pvar)` with $df = `r p(df)`$.
+
+###Jf
+
+```{r}
+q1 = qchisq(.05,df)
+q2 = qchisq(.95,df)
+val1 = (SS1+SS2)/q1
+val2 = (SS1+SS2)/q2
+```
+
+The 90% CI is $[`r c(p(val2), p(val1))`]$.
+
+###Jg
+
+Test $H_0$ mu1=mu2. Check the effect size and probability.
+
+```{r}
+effect = xb1-xb2
+pooleds = sqrt(((n1-1)*v1 + (n2-1)*v2) / df)
+tv = effect / pooleds / sqrt(1/n1 + 1/n2)
+```
+
+Our t-value was $t_{15} = `r p(tv)`$ which is within the 2-tailed rejection value of 2.13, so we retain the null that the means are not different.
+
+###Jh
+
+One reason that there is a major issue is that the two studies have very different sapmle sizes. The combination of within subject design with more samples than a between subject design with fewer samples suggests Study 1 is a much better estimate of the true effect. Just this issue alone is a strong reason to favor the larger power study.
+
+###Kd
+
+$A = \chi^2_3 > 1.01$ \
+$B = \chi^2_3 < 3.67$ \
+$P(A | B) = P(A and B) / P(B)$
+
+```{r}
+reset()
+prob_AandB = pchisq(1.01,3,lower.tail=F)-(pchisq(3.67,3,lower.tail=F))
+prob_AgivB = prob_AandB / pchisq(3.67,3,lower.tail=T)
+```
+
+$P(A | B) = `r p(prob_AgivB)`$
+
+###Ke
+
+  C  ~C
+A  10%     20%
+~A 20%     80%
+
+```{r}
+ac_dist = as.table(matrix(c(.1,.1,.20,.6),nrow=2,ncol=2,byrow=T))
+mac_dist = addmargins(ac_dist)
+print(mac_dist)
+```
+
+**1** 20% have cell phones. \
+**2** P(Cell | Acc) = P(Cell & Acc) / P(Acc) = .1 / .2 = .5. \
+**3** P(A|C) = P(A&C)/P(C) = .1/.3 = .33. \
+P(A|~C)=P(A&~C)/P(~C) = .1/.7 = .143. 
+
+**4** It appears that the rate of accidents is much higher for cell phone users. 1/3 of cell phone users are in accidents, while only 1/7 of non-cell users are.
+
+**5** 
+E(X | ~A ~C) = .6 * 50 = 30.
+E(X | C) = .3 * 50 = 15.
+
+###Kf
+
+10 tosses, probability of 3,4,5, or 6 heads
+
+```{r}
+six = pbinom(6,10,.5)
+two = pbinom(2,10,.5)
+```
+
+$B(3-6,10) = `r p(six-two)`$
+
+###L1
+
+Perception of future threat does depend on mental illness, $b_{mentill}$ = .8, *t* = 4.02, *p* < .001; *F*(1,238) = 16.17, *p* < .001. When a juror perceives the defendant as ill they were also more likely to judge them a future threat, with approximately a 1 point difference on a 10 point scale. This effect seems small:
+
+```{r}
+reset()
+eta2 = 1 / (1 + 238/16.17)
+```
+
+Indeed the variability explained by mental illness is only `r p(eta2*100)`% of the total.
+
+We made a causal model of perception of future threat dependent on mental illness. The overall model was significant *F*(1,238) = 16.17, *p* < .001. The effect of mental illness was significant $b_{mentill} = 0.80, *t* = 4.02, *p* < 0.001. We might speculate that jurors think mentally ill patients are (slightly) more likely to be a threat in the future.
+
+###L2
+
+We setup models of future threat dependent on guilt and mental illness. The model which included an interaction term described significantly more of the variability in guilt, *F*(1,236) = 143.08, *p* = 0.004, than the simpler models. We then found that the interaction term was significant, *t* = -2.92, *p* = 0.004. This model analysis suggests that mental illness and future threat do interact.
+
+We can investigate this using the graphs given. Graphs 2 and 3 show that in the case of mental illness perception of guilt does not depend on future threat ratings. While in the case of non-mentally ill defendants there is a strong positive linear correlation, possibly with a non-linear (sigmoid) component. We might speculate that jurors believed that if the defendant was not mentally ill then they had *intent*, while jurors who were mentally ill maybe have been more likely to commit a crime by accident.
+
+###M
+
+```{r}
+reset()
+xs = c(1,3,5,7)
+ps = c(.3,.4,.2,.1)
+mu = sum(xs*ps)
+var = sum((xs-mu)^2*ps)
+```
+
+**1**
+$E(X) = \mu = \sum\limits_{i}^n p_i*x_i = `r p(mu)`$
+
+**2**
+$\sigma^2 = \sum\limits_{i}^n (x_i-\mu)^2 = `r p(var)`$ \
+$\sigma = `r p(sqrt(var))`$
+
+**3** \
+E(T) = 16*mu = 51.2 \
+Var(T) = 16*var = 56.96 \
+SD(T) = 7.547
+
+**4**
+(Calculate probability of staying <$6k)
+```{r}
+prob = pnorm(60,mean=51.2,sd=7.547,lower.tail=T)
+```
+
+If $6000 (60) is the cutoff for the budget and the distribution is normal we can use pnorm. The probability of staying within budget then is `r pp(prob)`.
+
+**5**
+(Calculate budget for 95%)
+```{r}
+budg = qnorm(.95,mean=51.2,sd=7.547,lower.tail=T)
+```
+
+If we want to be sure, with 95% probability, that we stay within budget we want our budget to be $`r p(budg*100)`.

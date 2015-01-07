@@ -1,0 +1,287 @@
+---
+title: "Homework 1"
+author: "Dan Birman"
+date: "Wednesday, September 24, 2014"
+output: html_document
+---
+
+Questions 1,2,4,8,9 for Grading
+
+```{r Load}
+library(ggplot2)
+#options(digits=2)
+p <- function(x) {formatC(x, format="f", digits=2)}
+```
+
+
+###1
+
+Start by getting some data together and taking a look.
+
+```{r}
+d_sums = c(26,31,45)
+names(d_sums) = c("'90-'91", "'92-'93", "'94-'94")
+qplot(names(d_sums),d_sums,xlab='Year',ylab='Maltreatment Deaths') + geom_bar(stat="identity")
+```
+
+### 1a-i
+
+There appears to be an increase over time, so let's investigate that.
+
+```{r test for increase}
+inc_test_rs = chisq.test(d_sums, p=c(1,1,1), rescale.p = T, simulate.p.value=F)
+print(inc_test_rs)
+```
+
+The chi-squared test was not significant at *p*<.05, $\chi^2$(`r inc_test_rs$parameter`, N=`r length(d_sums)`) = `r inc_test_rs$statistic`, *p* = `r round(inc_test_rs$p.value,digits=2)`.
+
+###1b-i & 1b-ii
+
+Let's take a look at the summary statistics
+
+```{r}
+d_sums = c(11,15,15,16,25,20)
+n = 6
+mu_d = mean(d_sums)
+sd_d = sd(d_sums)
+var_d = sd_d^2
+se_d = sd_d / sqrt(n)
+```
+
+The mean of 'maltreatment' deaths for the consecutive years was `r mu_d` with standard deviation `r sd_d` and a standard error of `r se_d`.
+
+###1b-iii & 1b-iv
+
+The estimated number of deaths *T* in x years is `r mu_d` times x. The s.d. of *T*  is likewise x * `r sd_d`.
+
+###2a
+
+Load the data and tabulate.
+
+```{r}
+d2 = read.csv("http://web.stanford.edu/class/psych252/_downloads/earlydeaths.csv")
+d_table = table(d2$cause,d2$time,dnn=c("Cause","Time"))
+d_table_m = addmargins(d_table)
+print(d_table_m)
+```
+
+###2b
+
+```{r}
+res_d = summary(d_table)
+print(res_d)
+```
+
+A chi-squared analysis reveals that there is no significant relationship between time and cause of death, $\chi^2$(`r res_d$parameter`) = `r res_d$statistic`, *p* = `r res_d$p.value`. This means that maltreatment rates are not changing over the time period in the sample.
+
+###2c
+
+```{r}
+res_d1 = chisq.test(d_table[1,])
+print(res_d1)
+```
+
+A chi-squared analysis reveals that there is no significant trend across time for 'maltreatment' cases specifically, $\chi^2$(`r res_d1$parameter`) = `r res_d1$statistic`, *p* = `r res_d1$p.value`. The low *p* value suggests that there may be a trend present. See the plot in question **1**. Given this trend and the result in **2b** (non-significant) we might speculate that both maltreatment and non-maltreatment are increasing over time. Looking at the margins confirms this hypothesis: `r d_table_m[3,1:3]` total cases by year.
+
+###2d
+
+```{r}
+res_d2 = chisq.test(d_table)
+print(res_d2)
+```
+
+This analysis is equivalent to **2b**.
+
+###4a
+
+```{r}
+# Hypothesis and Observations
+H0_prop = c(.2,.3,.5)
+prop = c(20,30,30)
+# Test for significance
+res_SM = chisq.test(prop,p=H0_prop)
+```
+
+We tested whether a sample of california college seniors "job-type" measures was significantly different from the hypothesized proportions of 20%, 30%, 50% (job types 1, 3, and 3, respectively). The results were not significant, $\chi^2$(`r res_SM$parameter`) = `r res_SM$statistic` *p* = `r res_SM$p.value`. This suggests that job-type is roughly proportional to the hypothesized proportions in the population.
+
+###4b-i
+
+```{r}
+data_PM = matrix(c(18,14,8,12,16,32),nrow=2,ncol=3,byrow=TRUE,dimnames=list(c("M-1","M-2"),c("JT-1","JT-2","JT-3")))
+data_PM_m = addmargins(data_PM)
+print(data_PM_m)
+```
+
+The marginal frequencies of Motivation are shown above.
+
+###4b-ii
+
+```{r}
+res_PM = chisq.test(data_PM)
+print(res_PM)
+```
+
+There was a significant relationship between motivation and job type in the sample, $\chi^2$(`r res_PM$parameter`, N=`r sum(data_PM)`) = `r res_PM$statistic`, *p* = ` rres_PM$p.value`. Further analysis can help us understand this before we start speculating about causes.
+
+###4b-iii
+
+```{r}
+mosaicplot(data_PM)
+```
+
+The mosaic plot shows that Motivation 1 (compared to 2) increases Job-Type 1, has no effect on Job-Type 2, and decreases Job-Type 3 (and vice versa). This appears to be an interaction effect. We might speculate that people with motivation 1: "Emotional" tend to take jobs in government, while people with motivation 2: "Materialistic" tend to take jobs in industry which often have higher pay scales.
+
+###8
+
+Load Data. Recall that: 
+
+    age: Age of voters surveyed (20-75 years)
+    agecat: Age of voters surveyed, binned into groups of 20 years
+    party: Political party of voters (1=Democrat, 2=Republican, 3=Other)
+    prop54: Whether voter reported if they would vote for Prop 54 (Racial Privacy Initiative)
+    optmism: Level of optimism (0-11)
+    recall: Do you think the governor should be recalled? (1=yes, 2=no, 3=unsure)
+    recallq: Do you think the governor should be recalled? (1=yes, 0=unsure, -1=no)
+
+```{r}
+sdata = read.csv("http://web.stanford.edu/class/psych252/_downloads/fieldsimul1.csv")
+sdata$recall = factor(sdata$recall, labels = c("yes", "no", "unsure"))
+sdata$party = factor(sdata$party, labels = c("democ", "repub", "other"))
+pop = c(72.3,46.5,43.2,42.5,41.9,35.0)*1e6
+s_lv = sum(pop[2:length(pop)])
+p_lv = pop[2:length(pop)]/s_lv
+```
+
+The likely voting population is `r s_lv`. The proportions of voters in each of the age categories is `r p_lv`.
+
+###8b
+
+```{r}
+sdata$agecat0 = findInterval(sdata$age,c(30,40,50,66))
+```
+
+###8c
+
+```{r}
+stable = table(sdata$agecat0)
+sprop = as.vector(stable)
+res_sd = chisq.test(stable,p=p_lv)
+print(res_sd)
+```
+
+The collected groups were compared to the proportions of likely voters in the population to determine whether they are a random sampling. This was done using  a chi-squared test for the calculated probaiblities in the population: `r p_lv`. This analysis suggests that there is a significant difference, $\chi^2$(`r res_sd$parameter`, N=`r sum(stable)`) = `r res_sd$statistic`, *p* = `r res_sd$p.value`. We might further investigate by looking whether there is any consistent effect across age groups by plotting the differences.
+
+```{r}
+plot(sprop/sum(sprop)-p_lv)
+abline(lsfit(1:5,sprop/sum(sprop)-p_lv),col="red")
+abline(0,0)
+```
+
+The 0 difference line is in black, while the linear best fit is in red.
+
+The significant difference seems to be driven by a general increasing trend in the differences. Overall it seems that there are less young voters than in the population and more older voters than in the population, we might speculate that this reflects trends that we often hear about in media surveys of the voting population.
+
+###8d
+
+We want to know whether the responses to the question "Do you think the governor should be recalled? (1=yes, 2=no, 3=unsure)" and the political party "Political party of voters (1=Democrat, 2=Republican, 3=Other)" are independent.
+
+```{r}
+rptable = table(sdata$recall,sdata$party)
+res_rp = chisq.test(rptable)
+print(res_rp)
+```
+
+Politcal party affiliation is independent of recall responses, $\chi^2$(`r res_rp$parameter`, N=`r sum(rptable)`) = `r res_rp$statistic`, *p* = `r res_rp$p.value`. The number of respondents in the "unsure" category for political party is very small (n=`r sum(rptable[3,])`), this causes an issue in the chi-squared analysis because its approximation of expected proportions is innacurate for small sample sizes.
+
+```{r}
+nou_data = sdata[sdata$recall!=3,]
+rp_nu_table = table(nou_data$recall,nou_data$party)
+res_rp_noU = chisq.test(rp_nu_table)
+print(res_rp_noU)
+```
+
+Removing these respondents allows us to invetsigate independence without violating the assumption. Without "unsure" respondents the probability that these variables are independent is much lower: $\chi^2$(`r res_rp_noU$statistic`, N=`r sum(rp_nu_table)`) = `r res_rp_noU$statistic`, *p* = `r res_rp_noU$p.value`. Although thi sisn't 
+
+###8e, 8f
+
+Let's see whether age category, recall, and party are related.
+
+```{r}
+qp = qplot(agecat0,recallq,data=sdata,geom="bar",stat="summary",fun.y="mean",facets=.~party,fill=agecat0,position="identity",main="Mean Recall Rating according to Age Category, by Party Affiliations") + scale_fill_gradient(low="orange",high="black",guide="legend")
+print(qp)
+```
+
+The plot suggests that there are several interactions between party, age category, and recall ratings. For example, people of "other" affiliation seem to be mostly young and likely to vote to recall. Members of the republican party (2) seem to be largely older and in favor of a recall. Members of the democratic party (1) seem to be skewed younger and mostly against a recall.
+
+###8g, 8h
+
+```{r}
+res_rap_i = lm(data=sdata,recallq ~ agecat0 * party)
+res_rap = lm(data=sdata,recallq ~ agecat0 + party)
+
+anova(res_rap_i,res_rap)
+```
+
+The anova analysis suggests that an interaction model does not provide a better analysis of the results, so we discard this, *p* = 0.64.
+
+```{r}
+summary(res_rap)
+```
+
+An additive model of effects finds a significant main effect for republican party affiliation, increasing the probability of voting for a recall, *p* = 0.025. This suggests that being a member of the republican party is correlated with voting "yes" for a recall. This may have to do with the party affiliation of the governor who is being voted on for the recall.
+
+###9a
+
+```{r Define MC}
+x0 = c(1,2,3,5,7,9)
+p0 = c(.2,.4,.24,.1,.05,.01)
+#Using the algebraic form for mean:
+mu0 = sum(x0*p0)/sum(p0)
+```
+
+The mean of `D0` is `r mu0`
+
+###9b
+Now we can take some samples and look at them.
+
+```{r Sample x0, echo=FALSE}
+s0 = sample(x0,1000,prob=p0,replace=T)
+rs1 = hist(s0, prob=T, main='1000 Point Sample Dist. of x0')
+lines(density(s0, adjust=4))
+```
+
+###9c
+
+Marked as **notes**, if you wanted an answer I suggest marking this as **question** in the future.
+
+###9d
+
+It's unclear from the directions whether you want the sample to be a 2000 point sample of D0, or a 2000 point sample of the means of 7-samples, as in smonte1.r. I suggest in the future that the assignments be more clear.
+
+In this case, following smonte1.r, I have used 2000 points, each the mean of 7 samples from D0.
+
+```{r echo=FALSE}
+d0 = c(0:6); p0 = c(.1, .25, .45, .09, .07, .03, .01)
+o3 = NULL
+for (i in 1:2000) {
+  o1 = sample(d0, 9, replace=T, prob = p0)
+	m1 = mean(o1); s1 = sd(o1); t1 = (m1 - mu0)/(s1/sqrt(9))
+	z1 = t1/sqrt(8/(8-2)) #standardize t
+	o3 = c(o3, z1)
+	}
+
+mc_data = data.frame(o3)
+ggplot(mc_data,aes(x=o3)) +
+  geom_density(adjust=3)
+
+qs1 = quantile(o3,probs=c(.025,.5,.975))
+true_qs = qnorm(c(.025,.5,.975))
+dq = qs1 - true_qs
+print(qs1)
+```
+
+As the density plot shows the distribution does not approximate the normal distribution well. There is a skew towards the negative values. This is emphasized by the difference of the quantiles from the true Z-score values: o3 quantiles - true Z-values = `r dq`. Suggesting that all three quantiles are much too low.
+
+###9e
+
+Using the traditional rule of -2/2 in this case would mean that Z-scores in the range [`r qs1[1]` -2] would be classified as significant when they are in fact not (a type II error). Similarly, z-scores in the range [`r qs1[2]` 2] would be classified as insignificant when they were significant (a type I error).

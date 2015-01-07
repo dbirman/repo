@@ -1,0 +1,329 @@
+---
+title: "birman_daniel_hw5"
+author: "Dan Birman"
+date: "Saturday, November 15, 2014"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+library(reshape2)
+pp = function(x) {round(x, digits=3)}
+p = function(x) {round(x, digits=2)}
+## APA Format Printing
+## Author: Dan Birman
+## 10/13/2014
+
+apaprint = function(stat_obj, coefs=c(),co=F,stars=F) {
+  so = class(stat_obj)
+  if (length(so) > 1) {so = so[1]}
+  switch(so,
+         "htest" = .phtest(stat_obj,stars),
+         "lm" = .plm(stat_obj,coefs,co,stars),
+         "glm" = .pglm(stat_obj,coefs,stars))
+  }
+
+.pglm = function(s,coefs,stars) {
+  #Warning this defaults 
+  if (length(coefs)==0) {coefs = dimnames(summary(s)$coefficients)[[1]][2]}
+  out_s = .lin_mod_coefs(s,coefs,stars)
+  out_s
+  }
+
+.plm = function(s,coefs,co,stars) {
+  sm = summary(s)
+  out_s = .lin_mod_coefs(s,coefs,stars)
+  if (co) {return(out_s)}
+  if (length(coefs)>=1) {paste(out_s,", ",sep="")}
+  #Everything standard
+  f = sm$fstatistic
+  p = pf(f[1],f[2],f[3],lower.tail=F)
+  r2 = sm$r.squared
+  if (length(coefs)>0) {
+    return(sprintf("%s$;  F_{(%.0f, %.0f)} = %.2f, %s, adj. R^2 = %.2f$",out_s,f[2],f[3],f[1],.pformat(p,stars),r2))
+    }
+  return(sprintf("$F_{(%.0f, %.0f)} = %.2f, %s, adj. R^2 = %.2f$",f[2],f[3],f[1],.pformat(p,stars),r2))
+  }
+
+.lin_mod_coefs = function(s,coefs,stars) {
+  sm = summary(s)
+  co_s = c()
+  if (length(coefs) >= 1) {
+    for (i in 1:length(coefs)) {
+      cur = coefs[i]
+      dat = sm$coefficients[cur,]
+      p = dat[4]
+      ci = confint(s,cur)
+      if (i > 1) {co_s = paste(", ",co_s,sep="")}
+      co_s = paste(sprintf("$b_{%s} = %.2f, [%.2f %.2f], %s$",cur,dat[1],ci[1],ci[2],.pformat(p,stars)),co_s,sep = "")
+      }
+    }
+  if (length(co_s)==0) {co_s = ""}
+  co_s
+  }
+
+.pformat = function(pv,stars) {
+  if (stars==T) {
+    if (pv >= .05) {return(sprintf("p = %.3f",pv))}
+    if (pv >= .01) {return(sprintf("p = %.3f *",pv))}
+    if (pv >= .001) {return(sprintf("p = %.3f **",pv))}
+    return("p < 0.001 ***")
+    }
+  if (pv >= .05) {return(sprintf("p = %.3f",pv))}
+  if (pv >= .01) {return(sprintf("p = %.3f",pv))}
+  if (pv >= .001) {return(sprintf("p = %.3f",pv))}
+  return("p < 0.001")
+  }
+
+.phtest = function(s,stars) {
+  switch(s["method"]$method,
+         "One Sample t-test" = .pttest(s,stars),
+         "Welch Two Sample t-test" = .pttest(s,stars),
+         "Pearson's Chi-squared test" = .pchisqp(s,stars),
+         "Pearson's Chi-squared test with Yates' continuity correction" = .pchisqp(s,stars),
+         "Chi-squared test for given probabilities" = .pchisqp(s,stars),
+         "One-way analysis of means (not assuming equal variances)" = .panova(s,stars),
+         "Pearson's product-moment correlation" = .pcorr(s,stars)
+         )
+  }
+
+.panova = function(s,stars) {
+  .basicprint(s,"F",stars)
+  }
+
+.pchisqp = function(s,stars) {
+  sprintf("$\\chi^2$(%.0f, N = %.0f) = %.2f, %s",s$parameter,s$parameter+1,s$statistic,.pformat(s$p.value,stars))
+  }
+
+.pcorr = function(s,stars) {
+  sprintf("*r* (%.0f) = %.2f, %s",s$parameter,s$estimate,.pformat(s$p.value,stars))
+  }
+
+.pttest = function(s,stars) {
+  .basicprint(s,"t",stars)
+  }
+
+.basicprint = function(s,st,stars) {
+  sprintf("*%s* (%.0f) = %.2f, %s",st,s$parameter,s$statistic,.pformat(s$p.value,stars))
+  }
+```
+
+### QUESTION 1
+
+Repeated measures design with features both between-subject factors (2 attention conditions) and within-subject factors (# of possible solutions to a word task, solving anagrams). The dependent variable was score on a memory test (higher numbers reflect better performance). There were 10 study participants divided between the two conditions; they each completed three problems in each category of # of possible solutions (1, 2, or 3).
+
+Fields:
+
+subidr: Subject ID
+attnr: 1 = divided attention condition; 2 = focused attention condition
+num1: only one solution to the anagram
+num2: two possible solutions to the anagram
+num3: three possible solutions to the anagram
+
+Let's start by looking at the data
+
+```{r}
+library(ggplot2)
+library(reshape)
+data = read.csv("http://web.stanford.edu/class/psych252/_downloads/kv0.csv")
+# convert to long form
+data = melt(data,c(1,2),c(3,4,5))
+contrasts(data$attnr) = c(-1,1)
+data$score = data$value
+data$anagramf = factor(data$variable,levels=c("num1","num2","num3"),labels=c("Hard","Med","Easy"))
+data$numc = scale(as.numeric(data$variable),scale=F)
+# plot
+ggplot(data) +
+  geom_point(aes(anagramf,score,color=attnr),position=position_jitter(width=.05,height=.05)) +
+  geom_smooth(aes(anagramf,score,color=attnr,group=attnr),method="lm",formula=y~x^2)
+```
+
+In general, it looks like anagram difficulty reduces score, but that attention might be sufficient to offset this drop. It looks like there is an interaction, where level of attention is influencing the relationship of anagram difficulty on score. Let's look to see whether this interaction is in fact significant.
+
+Before we do this, let's check to see whether there is a lot of subject variability which might explain the result we observed here.
+
+### 1d
+
+```{r}
+ggplot(data) +
+  geom_line(aes(anagramf,score,color=attnr,group=subidr),position=position_jitter(width=.1,height=.1))
+```
+
+It does look like there is a lot of variability, but at the same time it doesn't look like there are large differences in slope among the lines within each of the two groups. Our expectation therefore is that there is an interaction effect and we will test to see whether this is significant.
+
+Because we have multiple subjects who *each* completed the three different anagram problems, we have a repeated measures design that should be analyzed with a mixed model. We will compare a series of models to try to understand these effects.
+
+```{r}
+# Give anagram a linear/quadratic contrast set so that we can use it as comparison later.
+contrasts(data$anagramf) = cbind(c(1,0,-1),c(-1,2,-1))
+
+# The simplest model is the linear regression:
+rs1 = lm(score ~ numc,data)
+# Now we might consider whether attention is important
+rs2 = lm(score ~ attnr + numc,data)
+# We can additionally look for an interaction
+rs3 = lm(score ~ attnr * numc,data)
+anova(rs1,rs2,rs3)
+```
+
+As we can see our linear regression model analysis (note: not mixed models) shows that the interaction model taking into account both attention and anagram difficulty and explains the most variance when taking into account the number of degrees of freedom. But subject is a random variable, and part of our results may be due to or masked by variability between subjects that we aren't necessarily interested in.
+
+```{r}
+library(lme4)
+library(lmerTest)
+# We will now add an intercept for the  random effect of subject 
+rs4 = lmer(score ~ attnr * numc + (1 | subidr),data,REML=F)
+# The following model would add a slope as well, but we don't have enough data points to do this
+rs5 = lmer(score ~ attnr * numc + (1 + numc | subidr),data,REML=F)
+AIC(rs3)
+AIC(rs4)
+AIC(rs5)
+```
+
+###1a/b
+
+We built two regression models, one of which takes into account the random effect of subject identity. Comparing the models we found AIC values, linear model = `r p(AIC(rs3))`, mixed model w/ intercept = `r p(AIC(rs4))`, mixed model w/ intercept and slope = `r p(AIC(rs5))`. According to the relative likelihood equation \
+$exp(AIC_{comp}-AIC_{min})$ \
+A difference in AIC values of <~3 means that the higher AIC models are nearly equally likely to the minimum model. Some scholars suggest using a weighted average of similar models when neither is conclusively better. For simplicity we will conclude that since neither model is much better than the other we will perform our analysis on the simplest model, which is the linear model without an intercept or slope.
+
+Note that in response to the question, neither adding the intercept nor the slope improved the model fit significantly according to the AIC comparison.
+
+We established that a fixed effects model of score, predicted from attention level and anagram difficulty, best explains the results with the least number of parameters. We computed the regression model in rs3, looking at the interaction between attention and anagram difficulty. We found a significant interaction for attention type by anagram difficulty (num), `r apaprint(rs3,coefs="attnr1:numc")`. To analyze this interaction further we can plot the simple effects:
+
+```{r}
+library(effects)
+plot(allEffects(rs3))
+summary(rs3)
+```
+
+Where we can clearly see that when focused there is no linear or quadratic effect of anagram difficulty on score, whereas during the divided attention condition there is a linear effect of anagram difficulty on score. We can conclude that attention is an important factor in determining score and that when focused attention is available it puts performance at "ceiling".
+
+###1c
+
+We can also compare number of solutions as a covariate vs. a factor. According to the writeup, anagram difficulty as a factor with a linear contrast (and an orthogonal second contrast) should be similar to considering difficulty as a quantitative variable. Let's see if this is the case.
+
+```{r}
+lin = lm(score ~ attnr * numc,data)
+fac = lm(score ~ attnr * anagramf,data)
+anova(lin,fac)
+```
+
+There isn't enough data to do the correct comparison (score ~ attnr * poly(numc,2)), but nevertheless we find that the two conditions are not significantly different, $F(2,54) = .331, p = .719$. 
+
+### QUESTION 2
+
+```{r}
+data = read.table("http://web.stanford.edu/class/psych252/data/ex4L.txt",header=T)
+contrasts(data$Valence) = cbind(c(-1,0,1),c(-1,2,-1))
+data$Recallc = scale(data$Recall,scale=F)
+```
+
+Let's start by plotting to understand the data.
+
+```{r}
+library(GGally)
+ggplot(data) +
+  geom_point(aes(Task,Recall,color=Valence)) + 
+  geom_smooth(aes(Task,Recall,color=Valence,group=Valence),method="lm") +
+  facet_grid(.~Subject)
+```
+
+It's possible that there are interactions within subject, we'll build up a full set of models to try to understand this.
+
+```{r}
+# First, identify the random effects that are significant
+rs0 = lmer(Recallc ~ (1|Subject),data)
+rs1 = lmer(Recallc ~ (1 + Task|Subject),data)
+rs2 = lmer(Recallc ~ (1 + Task + Valence | Subject),data)
+AIC(rs0)
+AIC(rs1)
+AIC(rs2)
+```
+
+Identifies 1+T as a good model of the random 
+
+```{r}
+rs3a = lmer(Recallc ~ Task + (1 + Task | Subject),data)
+rs3b = lmer(Recallc ~ Valence + (1 + Task | Subject),data)
+AIC(rs1)
+AIC(rs3a)
+AIC(rs3b)
+```
+
+Only Task is significant, let's test the full model just in case.
+
+```{r}
+rs4 = lmer(Recallc ~ Task + Valence + (1 + Task | Subject),data)
+rs5 = lmer(Recallc ~ Task * Valence + (1 + Task | Subject),data)
+AIC(rs3a)
+AIC(rs4)
+AIC(rs5)
+```
+
+It looks like task is an important predictor, but valence is not. Let's move forward with model rs3a.
+
+```{r}
+summary(rs3a)
+```
+
+We computed a regression analysis predicting Recall from the Task type (cued/free) and Valence (negative/neutral/positive), and included two random effets for subjects, an intercept and a slope across Task type. The resulting model showed that there was a very large amount of variation in the Recall levels across subjects, Var = 20.79, and a smaller amount of variance in slopes, Var = 1.29, relative to the residal variance, Var = 2.57. Although there is a perfect negative correlation between the intercept and slope, the AIC analysis suggests that the slope model is still a better fit for the data. In addition we found a significant negative effect of Task Free, compared to Task Cued, $\beta_{TaskFree} = -2.57, t(4.68) = -3.92, p = .013$ (note, p-values obtained from package lmerTest). If we knew more about the dataset we would be able to speculate further on the relationship, but clearly Task is important here while Valence doesn't show a consistent effect--note that Valence did show a marginal effect earlier, with a larger sample size we might be able to clarify this result.
+
+### QUESTION 4
+
+40 participants were presented with 20 sound clips, varying in length from 30 to 90 seconds. Ten were taken from funny comedy routines, while ten were taken from the podcast of a tedious statistics class (the two groups have the same average length). After a delay, participants are asked to indicate how fun each clip was to listen to (on a scale to 0, not fun at all, to 7, a total blast), and to estimate how long (in seconds) the clip lasted. Each column corresponds to a rating, such that, for example, "comclip1.rat" is the rating of the first comedy clip, while "statsclip10.len" is the estimated length of the tenth stats clip for the same participant, etc.
+
+```{r}
+data_o = read.csv("http://web.stanford.edu/class/psych252/_downloads/timeflies.csv")
+```
+
+Fields:
+
+comclip.rat: rating of comedy clips
+statsclip.rat: rating of statistics class clips
+comclip.len: perceived length of comedy clips
+statsclip.len: perceived length of statistics class clips
+
+
+```{r}
+tdata = data.frame(rcomedy = rowMeans(data_o[,2:11]),rstats = rowMeans(data_o[,12:21]),
+                   lcomedy = rowMeans(data_o[,22:31]),lstats = rowMeans(data_o[,32:41]),
+                   id = data_o[,1])
+tdata$rdiff = tdata$rcomedy-tdata$rstats
+tdata$ldiff = tdata$lcomedy-tdata$lstats
+tdata$csum = scale(tdata$rcomedy+tdata$rstats,scale=F)
+tdata$sum = tdata$rcomedy+tdata$rstats
+```
+
+Data is setup properly, let's look at whether the difference between clip types for each participant is significant.
+
+```{r}
+rs1 = lm(ldiff~1,tdata)
+summary(rs1)
+```
+
+We tested whether the difference in estimated lengths for the different clip types varied consistently across participants. We computed a regression model performing a t-test of the difference in lengths compared to 0 and found that the difference in lengths was significantly different from zero, on average participants estimated the statistics clips as 3 seconds longer than the comedy clips, $\beta_{int} = -2.95, t(39) = -3.48, p = .001$
+
+```{r}
+rs2 = lm(rdiff~1,tdata)
+summary(rs2)
+```
+
+We tested whether the difference in ratings for the different clip types varied consistently across participants. We computed a regression model performing a t-test of the difference in ratings compared to 0 and found that the difference in ratings was significantly different from zero, on average participants rated the comedy clips as .27 points more fun than the statistic clips, $\beta_{int} = .27, t(39) = 3.49, p = .001$
+
+```{r}
+rs3 = lm(ldiff~rdiff,tdata)
+rs4 = lm(ldiff~rdiff+csum,tdata)
+anova(rs3,rs4)
+summary(rs3)
+ggplot(tdata) +
+  geom_point(aes(rdiff,ldiff)) +
+  theme_bw() +
+  xlab("Difference in Ratings (Comedy - Stat)") +
+  ylab("Difference in Estimated Length (Comedy - Stat)")
+```
+
+We computed two regression analysis predicting the estimated length of clips as a function of the rating and found that including a variable controlling for individual variation across all clip types (approximately what "csum" acts as) did not improve the model. This is similar to including a random intercept effect, in other words, if participants who rated clips higher on average were also more likely to rate clips as longer, including csum would account for this spurious effect. The model comparison shows that including a pedestal for ratings does not improve the model.
+
+Note that we could also use the original dataset, without averaging across clips, and compute a mixed model with a random effect for clip. Doing this analysis results in qualitatively similar outcomes to including csum in the linear regression model, supporting the interpretation of csum presented here.
+
+In conclusion, we computed a regression model predicting estimated length from rating, which depended on clip type as we saw before. We found that rating was a significant predictor of estimated length, accounting for over 70% of the variance. A one point increase in the fun rating caused a 9 second reduction in the expected length of clips across participants, `r apaprint(rs3,coefs="rdiff")`. This makes sense given the hypothesis that "time flies when you're having fun". Participants who felt the comedy clips were much more fun than the statistics clips also found that the comedy clips were much shorter.

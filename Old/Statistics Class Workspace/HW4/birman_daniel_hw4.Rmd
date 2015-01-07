@@ -1,0 +1,918 @@
+---
+title: "birman_daniel_hw4"
+author: "Dan Birman"
+date: "Thursday, October 30, 2014"
+output: html_document
+---
+
+Loading
+
+```{r}
+bm.bootstrapmed<-function(x,med,y,iterations=1000,alpha=.05) {
+  ## Bootstrapping mediation based on Preacher & Hayes (2004)
+  # Version 2.0
+  # Requires bm.med()
+  as.data.frame(cbind(x,med,y))->vars;
+  length(x)->N;
+  bootab<-vector()
+  for (i in 1:iterations) {
+    sample(c(1:N),N,replace=T)->sampnums;
+    lm(vars[sampnums,2]~vars[sampnums,1])$coefficients[2]->itera;
+    lm(vars[sampnums,3]~vars[sampnums,2]+vars[sampnums,1])$coefficients[2]->iterb;
+    (append(bootab,itera*iterb))->bootab
+  }
+  hist(bootab,main=paste("Bootsrapped a*b, with",iterations,"iterations"),col="red");
+  bm.med(x,med,y)[1,5]->ab
+  # Bias correction after Stine (1989)
+  sum(bootab<=ab)/iterations->prob
+  qnorm(prob)->Z0
+  round(pnorm(2*Z0+qnorm(alpha/2)),3)->bcl
+  round(pnorm(2*Z0+qnorm(1-alpha/2)),3)->bcu
+  print("Bootstrap results:",quote=F)
+  print(round(c("Mean(ab*)"=mean(bootab),"p(ab*<ab)"=prob),3))
+  print("Uncorrected:",quote=F)
+  print(round(quantile(bootab,c(alpha/2,1-alpha/2)),3))
+  print("Bias Corrected:",quote=F)
+  print(round(quantile(bootab,c(bcl,bcu)),3))
+}
+bm.med<-function(x,med,y) {
+summary(lm(y~x))$coefficients[2,1]->c;
+summary(lm(y~x))$coefficients[2,4]->sigc;
+summary(lm(med~x))$coefficients[2,1]->a;
+summary(lm(med~x))$coefficients[2,2]->sa;
+summary(lm(med~x))$coefficients[2,4]->siga;
+summary(lm(y~x+med))$coefficients[2,1]->cprime;
+summary(lm(y~x+med))$coefficients[2,4]->sigcprime;
+summary(lm(y~x+med))$coefficients[3,1]->b;
+summary(lm(y~x+med))$coefficients[3,2]->sb;
+summary(lm(y~x+med))$coefficients[3,4]->sigb;
+sobelsab<-sqrt(b^2*sa^2+a^2*sb^2+sa^2*sb^2);
+sobelz<-abs(a*b)/sobelsab;
+goodmansab<-sqrt(b^2*sa^2+a^2*sb^2-sa^2*sb^2);
+goodmanz<-abs(a*b)/goodmansab;
+round(rbind(c(c=c,"c'"=cprime,a=a,b=b,ab=a*b,Sobel=sobelz,Goodman=goodmanz),c(sigc,sigcprime,siga,sigb,NA,2*(1-pnorm(sobelz)),2*(1-pnorm(goodmanz)))),3)->output_table;
+rownames(output_table)<-c("Coeff","p val");
+print(output_table);
+}
+library(ggplot2)
+library(reshape)
+pp = function(x) {round(x, digits=3)}
+p = function(x) {round(x, digits=2)}
+## APA Format Printing
+## Author: Dan Birman
+## 10/13/2014
+
+apaprint = function(stat_obj, coefs=c(),co=F,stars=F) {
+  so = class(stat_obj)
+  if (length(so) > 1) {so = so[1]}
+  switch(so,
+         "htest" = .phtest(stat_obj,stars),
+         "lm" = .plm(stat_obj,coefs,co,stars),
+         "glm" = .pglm(stat_obj,coefs,stars))
+  }
+
+.pglm = function(s,coefs,stars) {
+  #Warning this defaults 
+  if (length(coefs)==0) {coefs = dimnames(summary(s)$coefficients)[[1]][2]}
+  out_s = .lin_mod_coefs(s,coefs,stars)
+  out_s
+  }
+
+.plm = function(s,coefs,co,stars) {
+  sm = summary(s)
+  out_s = .lin_mod_coefs(s,coefs,stars)
+  if (co) {return(out_s)}
+  if (length(coefs)>=1) {paste(out_s,", ",sep="")}
+  #Everything standard
+  f = sm$fstatistic
+  p = pf(f[1],f[2],f[3],lower.tail=F)
+  r2 = sm$r.squared
+  if (length(coefs)>0) {
+    return(sprintf("%s$;  F_{(%.0f, %.0f)} = %.2f, %s, adj. R^2 = %.2f$",out_s,f[2],f[3],f[1],.pformat(p,stars),r2))
+    }
+  return(sprintf("$F_{(%.0f, %.0f)} = %.2f, %s, adj. R^2 = %.2f$",f[2],f[3],f[1],.pformat(p,stars),r2))
+  }
+
+.lin_mod_coefs = function(s,coefs,stars) {
+  sm = summary(s)
+  co_s = c()
+  if (length(coefs) >= 1) {
+    for (i in 1:length(coefs)) {
+      cur = coefs[i]
+      dat = sm$coefficients[cur,]
+      p = dat[4]
+      ci = confint(s,cur)
+      if (i > 1) {co_s = paste(", ",co_s,sep="")}
+      co_s = paste(sprintf("$b_{%s} = %.2f, [%.2f %.2f], %s$",cur,dat[1],ci[1],ci[2],.pformat(p,stars)),co_s,sep = "")
+      }
+    }
+  if (length(co_s)==0) {co_s = ""}
+  co_s
+  }
+
+.pformat = function(pv,stars) {
+  if (stars==T) {
+    if (pv >= .05) {return(sprintf("p = %.3f",pv))}
+    if (pv >= .01) {return(sprintf("p = %.3f *",pv))}
+    if (pv >= .001) {return(sprintf("p = %.3f **",pv))}
+    return("p < 0.001 ***")
+    }
+  if (pv >= .05) {return(sprintf("p = %.3f",pv))}
+  if (pv >= .01) {return(sprintf("p = %.3f",pv))}
+  if (pv >= .001) {return(sprintf("p = %.3f",pv))}
+  return("p < 0.001")
+  }
+
+.phtest = function(s,stars) {
+  switch(s["method"]$method,
+         "One Sample t-test" = .pttest(s,stars),
+         "Welch Two Sample t-test" = .pttest(s,stars),
+         "Pearson's Chi-squared test" = .pchisqp(s,stars),
+         "Pearson's Chi-squared test with Yates' continuity correction" = .pchisqp(s,stars),
+         "Chi-squared test for given probabilities" = .pchisqp(s,stars),
+         "One-way analysis of means (not assuming equal variances)" = .panova(s,stars),
+         "Pearson's product-moment correlation" = .pcorr(s,stars)
+         )
+  }
+
+.panova = function(s,stars) {
+  .basicprint(s,"F",stars)
+  }
+
+.pchisqp = function(s,stars) {
+  sprintf("$\\chi^2$(%.0f, N = %.0f) = %.2f, %s",s$parameter,s$parameter+1,s$statistic,.pformat(s$p.value,stars))
+  }
+
+.pcorr = function(s,stars) {
+  sprintf("*r* (%.0f) = %.2f, %s",s$parameter,s$estimate,.pformat(s$p.value,stars))
+  }
+
+.pttest = function(s,stars) {
+  .basicprint(s,"t",stars)
+  }
+
+.basicprint = function(s,st,stars) {
+  sprintf("*%s* (%.0f) = %.2f, %s",st,s$parameter,s$statistic,.pformat(s$p.value,stars))
+  }
+library(psych)
+library(car)
+```
+
+###QUESTION A
+
+Using f_data from:
+Data from a study of 68 companies, examining relationships between the quality of family-friendly programs at each company, the percentage of employees with families who use these programs, and employee satisfaction (all continuous variables).
+
+Fields:
+
+famprog: the amount of family-friendly programs from (1 = Nothing at all to 9 = Amazing family-friendliness)
+perfam: the percentage of employees with families in the organization (from 0% to 100%)
+empastis: the average rating of employee satisfaction (1 = Extremely unsatisfied to 7 = Extremely satisfied)
+
+###Aa
+
+```{r}
+f_data = read.csv("http://web.stanford.edu/class/psych252/_downloads/families.csv")
+n = 68
+# Employee Satisfaction (empastis) ~ Family Programs +/* Percentage of Employees w/ Families
+```
+
+Let's first take a look at the data and just try to understand what is going on.
+
+```{r}
+library(GGally)
+ggpairs(f_data)
+```
+
+We can see that there is a weak positive correlation between satisfaction and programming and a negative correlation with family number. While programming and family count have roughly no correlation. We might speculate that the dependence of satisfaction on programming is influenced by whether employees have families.
+
+Before we continue we briefly check whether the variables are normally distributed and look at the mean of each.
+
+```{r}
+ggplot(f_data) +
+  geom_bar(aes(empsatis,stat="identity"),binwidth=.3,,color="orange") + theme_bw()
+ggplot(f_data) +
+  geom_bar(aes(perfam,stat="identity"),binwidth=10,color="blue") + theme_bw()
+ggplot(f_data) +
+  geom_bar(aes(famprog*10,stat="identity"),,binwidth=10,color="red") + theme_bw()
+```
+
+So employee satisfaction is distributed with a mean of `r p(mean(f_data$empsatis))`, percentage of families is distributed with a mean of `r p(mean(f_data$perfam))`, and programming is not normally distributed with a mean of `r p(mean(f_data$famprog))`. We will want to scale these different attributes when we run our regressions.
+
+Let's take a look at whether our speculative hypothesis above is realistic. Let's look for interactions by re-coding the variables into categories.
+
+```{r}
+f_data$famprog_f = factor(findInterval(f_data$famprog,median(f_data$famprog)),
+                          levels=c(0,1),labels=c("Low","High"))
+qs = quantile(f_data$perfam,c(.34,.66))
+f_data$perfam_f = factor(findInterval(f_data$perfam,qs), levels = c(0,1,2),labels=c(paste("<",qs[1],"%",sep=""),
+                                                  paste("<",qs[2],"%",sep=""),"<100%"))
+# Contrast coding
+contrasts(f_data$perfam_f) = cbind(c(-.5,0,.5))
+
+f_data$famprog_c = f_data$famprog - mean(f_data$famprog)
+f_data$perfam_c = f_data$perfam - mean(f_data$perfam)
+
+mpf = mean(f_data$perfam_c)
+sdpf = sd(f_data$perfam_c)
+ci = c(mpf-sdpf/sqrt(n),mpf+sdpf/sqrt(n))
+
+rs = lm(empsatis ~ famprog_c + perfam_c,f_data)
+summary(rs)
+ggplot(f_data) +
+  geom_point(aes(famprog,empsatis,color=perfam_f),size=3) +
+  geom_smooth(aes(famprog,empsatis,color=perfam_f,group=perfam_f,fill=perfam_f),
+              method="lm",alpha=.1)+
+  theme_bw() +
+  labs(x="Family Programming", y="Employee Satisfaction")
+```
+
+We can see that there might be an interaction, especially at high levels of percentage of families, but was our main effect analysis in `rs` significant? We computed a linear regression for predicting employee satisfaction from rates of family programming and % of employees with families looking only at additive effects. We found only a marginal effect of increasing family programming predicting higher satisfaction, `r apaprint(rs,coefs="perfam_c")`. Let's check now if the interaction that we see in the plot is significant.
+
+###Ab
+
+```{r}
+rs2 = lm(empsatis ~ famprog_c*perfam_c,f_data)
+summary(rs2)
+```
+
+We computed the same linear regression as above, including an interaction term for famprog * perfam. We found that the interaction effect was significant, higher rates of employees with families increases the slope of the satisfaction ~ family programming regression line, `r apaprint(rs2,coefs="famprog_c:perfam_c")`.
+
+###Ac/d/e
+
+Family-friendly programs do not improve employee satisfaction overall, but they do when employees with families make up more than 60% of the workforce. Let's look specifically at this simple effect.
+
+```{r}
+library(effects)
+ef1 = effect("famprog_c",rs2,given.values=c("perfam_c"=mpf-sdpf))
+ef2 = effect("famprog_c",rs2,given.values=c("perfam_c"=mpf))
+ef3 = effect("famprog_c",rs2,given.values=c("perfam_c"=mpf+sdpf))
+d = data.frame(x=rep(ef1$x[,1],3),vals=rbind(cbind(ef1$fit[,1]),cbind(ef2$fit[,1]),cbind(ef3$fit[,1])),
+               level=rbind(cbind(rep(0,4)),cbind(rep(1,4)),cbind(rep(2,4))))
+d$PercEmpFam = factor(d$level,levels=c(0,1,2),labels=c("-1SD","Mean","+1SD"))
+ggplot(d,aes(x,vals,color=PercEmpFam)) +
+  geom_point(,size=2) +
+  geom_line() +
+  xlab("Family Programming (Centered)") +
+  ylab("Employee Satisfaction")
+```
+
+Immediately we can see how as percentage of employees with families increases, the effect of family programming becomes larger and larger.
+
+```{r}
+rs_m = lm(empsatis~famprog_c*I(perfam_c+sdpf),f_data) # this is the effect at MINUS 1 sd, this is becaues the scaling is opposite
+rs_mu = lm(empsatis~famprog_c*perfam_c,f_data)
+rs_p = lm(empsatis~famprog_c*I(perfam_c-sdpf),f_data) # same, this is the effect at + 1 sd
+```
+
+We computed three regression to analyze the simple effect of family programming (centered) on employee satisfaction, at three levels of % of employees with families: -1, 0, and +1 SD. We report the beta coefficients for each, which match the graph above: \
+-1 SD: `r apaprint(rs_m,coefs="famprog_c",co=T)` \
+ 0 SD: `r apaprint(rs_mu,coefs="famprog_c",co=T)` \
++1 SD: `r apaprint(rs_p,coefs="famprog_c",co=T)` \
+
+As we can see, the slope is not significant at $-1\sigma = `r p(mpf-sdpf)`%$, becomes marginally positive at the mean value of percentage of employees with families, $\mu = `r p(mpf)`%$, and significantly positive at $+1\sigma = `r p(mpf+sdpf)`%$.
+
+###Af Conclusion
+
+Employee satisfaction at the companies studied was found to depend on family programming only when a large percentage of employees had families. The effect varied strongly between companies at the extremes compared to companies with an average number of employees with families. We found that for companies at the low end of the scale $-1\sigma = `r p(mpf-sdpf)`%$ there was no significant impact of programming quantity on satisfaction. For companies at the high end of the percentage of family scale, above $+1\sigma = `r p(mpf+sdpf)`%$ we found a significant impact of programming quantity on satisfaction. Overall this suggests that companies can use the average family percentage in this sample to determine whether spending their budget on family programming will improve employee satisfaction. Our estimate of this average family percentage was `r p(mpf)`%, 95% CI [`r p(ci[1])`% `r p(ci[2])`%], and we would recommend that companies above this cutoff improve family programming, companies below this cutoff are safer turning to other methods to improve satisfaction.
+
+###QUESTION B
+
+Data from 3 groups of 20 students who drank either 0, 2, or 4 cups of coffee and then took a 10-problem statistics quiz. Examines possible mediators of accuracy and hyperactivity.
+
+Fields:
+
+difficulty: challenge of a task (probability of finishing the task unsuccessfully) (1= low, 5 = high)
+score: how well a person does on a task (0 - 10)
+train: either a novice or expert, categorical
+
+###Ba
+
+Let's first take a look at this data and just try to understand what is going on.
+
+```{r}
+m_data = read.csv("http://web.stanford.edu/class/psych252/_downloads/hw4motive.csv")
+ggplot(data=m_data) +
+  geom_point(aes(difficulty,score,color=train)) +
+  geom_smooth(aes(difficulty,score,color=train,fill=train),method="lm") +
+  theme_bw()
+```
+
+These linear regressions don't seem realistic, why would novices do better at low difficulties? Perhaps there is a quadratic term.
+
+```{r}
+ggplot(data=m_data) +
+  geom_point(aes(difficulty,score,color=train)) +
+  geom_smooth(aes(difficulty,score,color=train,fill=train),method="lm",formula=y~poly(x,2)) +
+  theme_bw()
+```
+
+Just from our understanding of the data, this looks more realistic, both experts and novices start at approximately the same value, but novices don't do well at high difficulties. Let's look at the regression in more detail and see whether what looks like a quadratic interaction term is significant.
+
+Let's check whether the linear interaction (first graph) is significant.
+```{r}
+rs = lm(score ~ difficulty + train,m_data)
+rs2 = lm(score ~ difficulty*train,m_data)
+summary(rs2)
+```
+
+It does look like there is an interaction. Before we analyze it further, let's use the insight we had with graph two and consider difficulty to have a quadratic component.
+
+```{r}
+rs3 = lm(score ~ poly(difficulty,2)*train,m_data)
+anova(rs,rs2,rs3)
+```
+
+Not only is there an interaction, but the quadratic model captures the most variability. Let's analyze this model further.
+
+```{r}
+summary(rs3)
+```
+
+We computed a regression model for predicting score from difficulty (linear and quadratic term) and expertise (train). We found an interaction between expertise and difficulty: novices scored less highly as difficulty increased compared to experts in both the linear and quadratic terms `r apaprint(rs3,coefs=c("poly(difficulty, 2)1:trainnovice","poly(difficulty, 2)2:trainnovice"))`.
+
+We can also plot the simple effects next to the main effect to understand how they differ:
+
+```{r}
+library(effects)
+eff = effect("poly(difficulty,2)*train",rs3) # simple effects at each level of train
+meff = effect("poly(difficulty,2)",rs3) # this is the main effect
+dm = data.frame(meff)
+de = data.frame(eff)
+#plot(eff,multiline=T)
+ggplot() + 
+  geom_point(data=m_data,aes(difficulty,score,color=train)) +
+  #geom_histogram(aes(eff$data$difficulty)) + # Dear Grader, This doesn't work well, or rather it doesn't match the effect plot very well, if you have any ideas how to do this well I would be very grateful to hear them!
+  geom_smooth(data=dm,aes(difficulty,fit,ymin=lower,ymax=upper),stat="identity",color="black",size=2) +
+  geom_point(data=de,aes(difficulty,fit,color=train),shape="X",size=4) + 
+  geom_smooth(data=de,aes(difficulty,fit,fill=train,group=train,color=train,ymin=lower,ymax=upper),stat="identity") +
+  theme_bw() +
+  ylab("Score") +
+  xlab("Difficulty")
+```
+
+The black line rperesents the main effect, while the two colored lines are the simple effects for the levels of train.
+
+We might want to test these simple effects specifically
+
+```{r}
+contrasts(m_data$train) = c(0, 1)
+rs_e = lm(score ~ train * poly(difficulty, 2), m_data)
+summary(rs_e) # Group coded as 0 is the simple effect
+contrasts(m_data$train) = c(1, 0)
+rs_n = lm(score ~ train * poly(difficulty, 2), m_data)
+summary(rs_n)
+```
+
+We computed two contrasts in our regression model to investigate the simple effect of difficulty (linear and quadratic) at the two levels of train, novice and expert. We found that for *experts* only the linear component of the simple effect is significant (this makes sense given the graph above), `r apaprint(rs_e,coefs="poly(difficulty, 2)1",co=T)`. For *novices* only the quadratic component of the simple effect is significant, while the linear component is marginal, `r apaprint(rs_n,coefs=c("poly(difficulty, 2)1","poly(difficulty, 2)2"),co=T)`. Note that this fits well with the graph shown above.
+
+Finally, we might want to look at whether the effect of train is significant at different levels of difficulty. We can see that there is probably a significant effect at difficulty = 5 but not at any other level. Note that the main effect of train was not found to be significant (for the contrast novice - expert), `r apaprint(rs3,coefs="trainnovice",co=T)`.
+
+
+Now let's look at the simple effect of train at different levels of difficulty
+
+```{r}
+contrasts(m_data$train) = c(1,0)
+m_data$difficultyc = m_data$difficulty-mean(m_data$difficulty)
+
+rs_1 = lm(score ~ train * (I(difficultyc+2)+I((difficultyc+2)^2)),m_data)
+summary(rs_1)
+rs_3 = lm(score ~ train * (difficultyc + I(difficultyc^2)), m_data)
+summary(rs_3)
+rs_5 = lm(score ~ train * (I(difficultyc-2)+I((difficultyc-2)^2)),m_data)
+summary(rs_5)
+```
+
+We computed the simple effect of train at three levels of difficulty, 1, 3, and 5. Given the graphed data above we might speculate that the only significant result would be at 5. As expected, we found an insignificant effect of train at difficulty = 1, `r apaprint(rs_1,coefs="train1",co=T)`. We found a marginal effect of train when difficulty = 3, `r apaprint(rs_3,coefs="train1",co=T)`, where novices scored .95 points higher than experts. And we found a significant effect of train when difficulty = 5, `r apaprint(rs_5,coefs="train1",co=T)`, where experts scored 2.70 points higher than the novices.
+
+###Speculation
+
+Overall we can conclude that experts continue improving linearly as difficulty increases, but novices show a significant drop-off at higher difficulties. We saw a marginal trend that novices might be doing better than experts at medium difficulties, but because of our small sample we should look towards replication to check this result.
+
+### QUESTION C
+
+```{r}
+l_data = read.csv("http://web.stanford.edu/class/psych252/_downloads/lifesatis.csv")
+n = 62
+```
+
+Data with predictors of life satisfaction among 62 working married men between the age of 20 and 70.
+
+Fields:
+
+id: Subject ID (1-62)
+age: Age (21-68)
+kids: number of children (0-8)
+jobsatis: current job satisfaction (1 to 7)
+marsatis: current marital satisfaction (1 to 7)
+lifsatis: current overall life satisfaction (1 to 7)
+
+### a/b
+
+Note that each satisfaction may depend on age and kids, and that the individual satisfaction ratings may also correlate.
+
+Let's check how much of this seems to be true.
+
+### b
+
+```{r}
+library(GGally)
+ggpairs(l_data[,-1])
+```
+
+Age shares a positive correlation with children (which makes a lot of sense) but also with marital satisaction (weak) and life satisfaction (moderate). Number of children is positively correlated with job satisfaction (weak) and life satisfaction (moderate), but negatively correlated with marital satisfaction (moderate). Job satisfaction is weakly correlated with life satisfaction. Martial satisfaction is also weakly correlated with life satisfaction. This is interesting, as you have more kids you become considerably less satisfied with marriage but more satisfied in your overall life. We will probably want to look at this in a bit more detail.
+
+Most of the trends appear to be linear but notably the correlations between age and kids and kids and marital satisfaction both may have non-linear effects.
+
+### c
+
+We will now test a series of regression models. And specifically report all of the coefficients, even when they aren't significant, because that's what the homework says to do.
+
+```{r}
+rs_a = lm(lifsatis ~ age,l_data)
+summary(rs_a)
+```
+
+We computed a regression model predicting life satisfaction from age. We found a significant effect for age, `r apaprint(rs_a,coefs="age")`.
+
+```{r}
+rs_ac = lm(lifsatis ~ age + kids,l_data)
+summary(rs_ac)
+```
+
+We computed a regression model predicting life satisfaction from age and children with additive effects. We found a significant effect for children but no effect for age, `r apaprint(rs_ac,coefs=c("age","kids"))`. Note that this suggests that children accounts for some of the effect of age that was significant in the first model (rs_a).
+
+```{r}
+rs_jm = lm(lifsatis ~ jobsatis + marsatis,l_data)
+summary(rs_jm)
+```
+
+We computed a regression model predicting life satisfaction from marital and job satisfaction with additive effects. We found no significant effects but two marginal effects for both job and marital satisfaction, `r apaprint(rs_jm,coefs=c("jobsatis","marsatis"))`.
+
+```{r}
+rs_all = lm(lifsatis ~ jobsatis + marsatis + kids + age,l_data)
+ao = anova(rs_a,rs_ac,rs_jm,rs_all)
+print(ao)
+```
+
+We computed four regression models with increasing complexity and found that, when accounting for degrees of freedom, the most complex model accounted for significantly more of the variance than the simpler models.
+
+```{r}
+summary(rs_all)
+```
+
+We computed a regression model predicting linear satisfaction from age, children, marital satisfaction, and job satisfaction. We found two significant effects for marital satisfaction and job satisfaction accounting for ~36% of the variance in life satisfaction, `r apaprint(rs_all,coefs=c("jobsatis","marsatis","kids","age"))`. An increase of one point on the marital satisfaction scale accounted for a .4 increase in life satisfaction and an increase of one child also accounts for a .4 increase in life satisfaction.
+
+### d
+
+Note that the effect of age in model rs_a dissappears in model rs_ac and in the full model rs_all. This is because of the correlation between age and children (.23), and that both have positive correlations with life satisfaction (age = .26, kids = .41), so some of the effect of age on life satisfaction may actually be shared with children. We could go into more detail to check this specifically, but this homework is way too long already!
+
+The  effect of marital satisfaction is much larger in the full model rs_all than the partial model rs_jm. This suggests that job satisfaction actually obscures the effect of marital satisfaction when age and children are not accounted for. This might be due largely to the negative correlation between children and marital satisfaction, when this relationship is accounted for we then find that marital satisfaction is a strong predictor of life satisfaction.
+
+### e
+
+Let's dissect the life satisfaction / marital satisfaction correlation to see if our intuition was correct. 
+
+```{r}
+lm_corr = cor(l_data$lifsatis,l_data$marsatis)
+lm_corr_a = partial.r(cor(l_data),c(5,6),3)
+```
+
+As we can see the correlation between life satisfaction and marital satisfaction increases from `r p(lm_corr)` to `r p(lm_corr_a[1,2])` when we partial out the effect of children.
+
+### f
+
+To compute the F statistic comparing models rs_ac to rs_all we will use the formula
+
+$F = ((R_{lsall}^2-R_{ls_ac}^2)/b)/((1-R_{ls_all}^2)/(n-a-b-1))
+
+```{r}
+r2_all = summary(rs_all)$r.squared
+b = 2 # number of additional predictors
+r2_ac = summary(rs_ac)$r.squared
+a = 2 # number of predictors in small model
+f_val = ((r2_all-r2_ac)/b)/((1-r2_all)/(n-a-b-1))
+calc_f = anova(rs_ac,rs_all)$F[2]
+round(calc_f,2)==round(f_val,2)
+pv = 1-pf(7.5149,2,57)
+```
+
+We found that the f-value comparing these two models was $F_{(2,57)} = `r p(f_val)`, p = `r pp(pv)`$. This suggests that the full model, when accounting for the additional degrees of freedom, still explains significantly more of the variance in life satisfaction than the partial model without marital or job satisfaction included.
+
+### QUESTION D
+
+```{r}
+p_data = read.csv("http://web.stanford.edu/class/psych252/_downloads/performance.csv")
+```
+
+Dataset from an educational psychologist, testing the effectiveness of 3 methods of mathematics instruction in a study, 20 students being trained by each method.
+
+Fields:
+
+method: method of instruction, 1 = emphasizing 'drill and practice,' 2 =
+emphasizing fun with math, and 3 = control method
+satis: student satisfaction with the method
+time: time each student spent doing or talking about math during the school day (12 to 26)
+ability: student's score on a standardized math test a year ago
+perform: student's score on a standardized math test after training
+
+First let's start by just looking at the data to see what's going on.
+
+```{r}
+p_data = p_data[-c(61,62),]
+p_data$methodf = factor(p_data$method,levels=c(1,2,3),
+                        labels=c("Drill","Fun","Control"))
+ggpairs(p_data,2:6)
+```
+
+### a
+
+To check that our manipulation of method was done randomly and check whether group influenced time or satisfaction.
+
+```{r}
+contrasts(p_data$methodf) = cbind(c(-1,-1,2),c(-1,1,0))
+rs_man = lm(satis ~ methodf,p_data)
+summary(rs_man)
+rs_man2 = lm(time ~ methodf,p_data)
+summary(rs_man2)
+```
+
+We computed two regression models to check whether or manipulation was successful. *A priori* we expect that satisfaction will differ between the two manipulation groups, since one is "fun" and the other appears to be "work", we can also reasonably expect that they might differ from the control. We might then expect that time spent discussing will also differ between the manipulation groups, again it will probably differ from the control.
+
+In the first regression model where method predicted satisfaction we found no significant differences between the manipulations and the control, but we did find a significant difference between groups (Fun was more satisfying than Drill), `r apaprint(rs_man,coefs="methodf2")`.
+
+In the second regression model where method predicted time we found a significant difference between the manipulations and the control (the control group spent more time discussing than the manipulations) and no differences between the groups, `r apaprint(rs_man2,coefs="methodf1")`.
+
+This suggests that our manipulation was successful, in some aspects the group differ from the control group and in other aspects they differ from each other, so all three groups are different.
+
+We might also want to look at whether there was random assignment between the groups:
+
+```{r}
+contrasts(p_data$methodf) = cbind(c(-1,1,0),c(-1,0,1))
+rs = lm(ability ~ methodf,p_data)
+rs3 = lm(perform ~ methodf,p_data)
+contrasts(p_data$methodf) = cbind(c(1,-1,0),c(0,-1,1))
+rs2 = lm(ability ~ methodf,p_data)
+rs4 = lm(perform ~ methodf,p_data)
+summary(rs)
+summary(rs2)
+```
+
+We computed a regression model predicting ability from the method groups, using effect coding to compare the means of each group to the grand mean of the balanced groups, as a proxy for the population mean. We found that all three groups differed significantly from the grand mean across methods, for groups Fun and Control, respectively, `r apaprint(rs,coefs=c("methodf1","methodf2"),co=T)`, and group Drill, `apaprint(rs,coefs=c("methodf1"),co=T)`. This analysis suggests that the three method groups were not randomly assigned. In the event that our analysis shows a null effect we may want to return to this manipulation check to try to understand what may have gone wrong.
+
+### b
+
+Let's look at whether performance varied across the method groups.
+
+```{r}
+summary(rs3) # method 1 is Fun, method 2 is Control
+summary(rs4) # method 1 is Drill
+```
+
+We computed a regression model predicting performance from the method groups, using effect coding to compare each group to the grand mean as a proxy for the population mean. We found that the Drill group was significantly greater than the population mean `r apaprint(rs4,coefs="methodf1",co=T)`. We also found that the Control group was significantly smaller than the population mean, `r apaprint(rs3,coefs="methodf2",co=T)`. We did not find a significant difference for the Fun group.
+
+### c
+
+Given the experimental design, this is actually a poor comparison, because we should be using the control group as our comparison group. Let's check whether the manipulations differ from the control, and whether the manipulations differ from each other.
+
+```{r}
+c1 = c(-1,1,0)
+c2 = c(-1,-1,2)
+dot = c1 %*% c2
+contrasts(p_data$methodf) = cbind(c(-1,1,0),c(-1,-1,2))
+rs5 = lm(perform ~ methodf,p_data)
+summary(rs5)
+```
+
+The contrasts are indeed orthogonal, their dot product is `r p(dot)`.
+
+We computed a contrast coded regression model predicting performance from method group. We found that the two manipulation methods resulted in significantly greater performance than the control group, `r apaprint(rs5,coefs="methodf2")`. We also found that the manipulations were significantly different from each other, with Drill causing greater preformance than Fun, `r apaprint(rs5,coefs="methodf1")`.
+
+*Ooops* I just noticed this is wasn't what the question wants, but whatever, it was interesting anyways! On to the question...
+
+### c
+
+Let's construct two *dummy variables* using the contrasts.
+
+```{r}
+p_data$Fun = p_data$method; p_data$Control = p_data$method
+for (i in 1:3) {
+  p_data$Fun[p_data$method==i] = c1[i]
+  p_data$Control[p_data$method==i] = c2[i]
+  }
+ggpairs(p_data,c(2,3,4,5,7,8))
+```
+
+As the correlation matrix shows, Fun and Control, our new variables, are uncorrelated. This makes sense because the two contrasts are orthogonal (see above).
+
+Let's do some analysis with a *plot*! Plots are nice...
+
+### d
+
+```{r}
+p_data$Funf = factor(p_data$Fun,levels=c(-1,0,1),labels=
+                       c("Drill","Control","Fun"))
+qs = quantile(p_data$satis,c(.33,.66))
+p_data$satisf = factor(findInterval(p_data$satis,qs),levels=c(0,1,2),labels=c("Low","Med","High"))
+# Plot of past ability
+ggplot(p_data) +
+  geom_point(aes(Funf,perform,color=ability,size=time)) +
+  geom_smooth(aes(Funf,perform,group=1),method="lm") +
+  facet_grid(~satisf) +
+  theme_bw()
+```
+
+Let's describe the contours! First of all, there is the obvious main effect of method and performance, decreasing from Drill to Fun across method groups. There also seems to be some bias towards higher levels of ability in the Fun group, reflecting our non-random assignment from earlier. Finally, it looks like time may be interacting, but we haven't looked into this yet. Let's consider whether time might be mediating the effect of method.
+
+### e
+
+Let's look at the partial correlation for perform and method, after accounting for time.
+
+```{r}
+xcorr = cor(p_data[sapply(p_data, is.numeric)])
+xcorr = xcorr[-1,-1] # remove method
+pc = partial.r(xcorr,c(1,2,4,5,6),3)
+xcorr_mt = xcorr[-3,-3] # remove time
+xcorr_mt
+pc
+pc-xcorr_mt # show differences
+```
+
+(Note that I'm using Fun, not method, because correlation with method is not easily interpreted because of the coding, instead Fun has a "linear" interpretation).
+
+After partialling out the effect of time, the correlations of performance with Fun and Control both decreased considerably. This indicates that time was offsetting some of the effect of method group. The correlation of performance with Control drops from 0 to -.19, a weak to moderate negative correlation indicating that performance was higher in the Fun/Drill group. Similarly, the correlation of performance with Fun drops by -.15 to a total of -.44, a moderate negative correlation indicating that performance drops as we go from the Drill, to Control, to Fun.
+
+### f
+
+Let's test the overall model for the determinants of performance for significance
+
+```{r}
+rs = lm(perform ~ Funf,p_data)
+rs2 = lm(perform ~ Funf + time,p_data)
+rs3 = lm(perform ~ Funf + time + satis,p_data)
+rs4 = lm(perform ~ Funf + time + satis + ability,p_data)
+rs5 = lm(perform ~ Funf * time + satis + ability,p_data)
+anova(rs,rs2,rs3,rs4,rs5)
+```
+
+We tested for increasingly complex regression models predicting Performance as a function of Method group, time spent discussing mathematics, satisfaction with group, and past ability. Each model of increasing complexity was found to significantly increase the variance explained in performance when accounting for the increase in degrees of freedom, not including the interaction model which was only marginally more significant. We will continue our analysis using the most complex model non-interaction model.
+
+```{r}
+summary(rs4)
+```
+
+We computed a regression model predicting performance from Method group, time spent discussing mathematics, satisfaction with method group, and ability on a previous test, and found significant effects for all of the regressors, negative for method group (compared to Drill) and positive for all other regressors, `r apaprint(rs4,coefs=c("FunfControl","FunfFun","time","satis","ability"))`.
+
+To analyze these data we will plot the effects when all of the other regressors are at a median value.
+
+```{r}
+plot(allEffects(rs4),typical=median) # note this sets the other variables to their median by default
+```
+
+Noting that all the effects were signiifcant in the model we can see that performance was only affected by the Drill manipulation, not by the Fun method. We might speculate that a fun-focused methodology, although it correlated with satisfaction earlier, did not succeed in teaching students a lot of math. That said, the Fun method lead to greater satisfaction and time spent discussing mathematics, both of which *do* increase performance. Time and satisfaction may therefore be mediators of the effect of the Fun method on Performance.
+Furthermore, accounting for previous ability controls for non-random assignment we observed at the beginning of this question. Because the "Fun" group had a disproportionately high number of high ability students, the performance of that group is further explained by their latent ability and not by the method itself.
+
+In summary, we might speculate that our evidence points to the Drill method, combined with discussion, as being a path to success on this mathematics exam.
+
+Note: I really wish I had time to do the full mediation analysis to look at time/satisfaction/ability as mediators in the Fun group, but this homework is too long.
+
+### QUESTION E
+
+```{r}
+c_data = read.csv("http://web.stanford.edu/class/psych252/_downloads/caffeine.csv")
+c_data = c_data[c(-61,-62),]
+```
+
+Data from 3 groups of 20 students who drank either 0, 2, or 4 cups of coffee and then took a 10-problem statistics quiz. Examines possible mediators of accuracy and hyperactivity.
+
+Fields:
+
+coffee: each group had either 0 cups, 2 cups, or 4 cups (coded in dataset as group 1, 2, or 3)
+perf: score on a stats quiz with 10 problems
+numprob: number of problems attempted (hyperactivity)
+accur: likelihood of getting a problem right if they tried (better success)
+
+We are interested in whether *performance* depends on caffeine intake and how this works. Is it because caffeine increases the *number of problems* or makes people more *accurate*?
+
+We are going to do two separate analyses for possible mediators.
+
+### Mediation Analysis for *Number of Problems*
+```{r}
+c_data$coffee[c_data$coffee==1]=0; c_data$coffee[c_data$coffee==2]=2; c_data$coffee[c_data$coffee==3]=4
+# We are keeping coffee quantitative
+ggplot(c_data) +
+  geom_point(aes(coffee,perf,size=numprob,color=numprob)) +
+  xlab("Cups of Coffee") +
+  ylab("Performance on Statistics Quiz")
+ggpairs(c_data,columns=c(1,2,4))
+```
+
+There definitely is some overlap between coffee use and number of problems completed. We can see from our correlation analysis that there is a very high degree of colinearity between coffee use and number of problems. Let's use the code given in class to look at whether number of problems might be mediating the relationship between coffee and performance.
+
+First, let's just see the coefficient values for comparing our diagram model.
+```{r}
+rs = lm(perf ~ coffee,c_data)
+c_prime = rs$coefficients["coffee"]
+rs2 = lm(numprob ~ coffee,c_data)
+a = rs2$coefficients["coffee"]
+rs3 = lm(perf ~ numprob,c_data)
+b = rs3$coefficients["numprob"]
+c = c_prime - a*b
+
+library(diagram)
+# Initial Model
+names = c("Coffee","Performance")
+M = matrix(nrow=2,ncol=2,data=0)
+M[2,1] = "c[prime]"
+plotmat(M,name = names, lwd = 1, curve=0,box.lwd = 2, cex.txt = 0.8, box.size = 0.1,box.type = "circle", box.prop = .5,main="Simple Model",arr.type="triangle")
+```
+
+In this simple model the value of c (the coefficient in the linear model) was found to be $c' = `r p(c_prime)`.
+
+```{r}
+# Mediation Model
+numgroups = 3
+diff = data.frame(matrix(data=0,nrow=numgroups,ncol=numgroups))
+names <- c("Performance","Coffee", "# of Problems")
+dimnames(diff)[[1]] = names; dimnames(diff)[[2]] = names
+diff[1,2] = "c";diff[1,3] = "b";diff[3,2] = "a"
+plotmat(diff, name = names, lwd = 1, curve=0,box.lwd = 2, cex.txt = 0.8, box.size = 0.1, box.type = "circle", box.prop = .5, main="Mediation Model",arr.type="triangle")
+```
+
+In the mediation model, the equation $c = c' + a*b$ was solved for, and reduced to: \
+$c = c' + a*b$ \
+$`r p(c)` = `r p(c_prime)` + `r p(a)`*`r p(b)`$
+
+As we can see, it does look like number of problems mediates the effect of coffee on performance. Let's check if this difference is significant.
+
+```{r}
+bm.med(c_data$coffee,c_data$numprob,c_data$perf)
+bm.bootstrapmed(c_data$coffee,c_data$numprob,c_data$perf)
+```
+
+It looks like this mediation is marginally significant, although the Sobel and Goodman tests are below .05, the bootstrap which is arguably the better method (with less assumptions), overlaps significantly with 0. We should get a separate sample and re-run our analyses as our n may be too small for this effect size.
+
+### Mediation Analysis for *Accuracy*
+
+Let's look now at whether accuracy mediates performance.
+
+```{r}
+ggplot(c_data) +
+  geom_point(aes(coffee,perf,size=numprob,color=numprob)) +
+  xlab("Cups of Coffee") +
+  ylab("Performance on Statistics Quiz")
+ggpairs(c_data,columns=c(1,2,3))
+```
+
+It does look like accuracy has a strong effect on performance and that coffee also does, but there doesn't seem to be much of an effect of coffee on accuracy.
+
+```{r}
+source("C:\\Users\\Dan\\Documents\\Box Sync\\dan-hg-repo\\Statistics Class Workspace\\HW4\\bm_boot.R")
+```
+
+```{r}
+rs = lm(perf ~ coffee,c_data)
+c_prime = rs$coefficients["coffee"]
+rs2 = lm(accur ~ coffee,c_data)
+a = rs2$coefficients["coffee"]
+rs3 = lm(perf ~ accur,c_data)
+b = rs3$coefficients["accur"]
+c = c_prime - a*b
+```
+
+In the mediation model, the equation $c = c' + a*b$ was solved for, and reduced to: \
+$c = c' + a*b$ \
+$`r p(c)` = `r p(c_prime)` + `r p(a)`*`r p(b)`$
+
+a is extremely small, so there won't be any mediation effect here, this makes sense given the low correlation we observed. It looks like coffee has absolutely no effect on accuracy.
+
+### Summary
+
+In summary, coffee does influence the number of problems performed, but our sample was inconclusive about whether the effect was significant or not and deserves replication. On the other hand, coffee does not influence the accuracy of math problems, although accuracy does influence performance.
+
+### QUESTION F
+
+The ANOVA F statistic is calculated with the following formulas \
+$F_{k-1,N-k} = MS_{treatment}/MS_{error}$ \
+$MS = SS/df$ \
+$Variance = s^2 = SS/(N-1)$ \
+For the error group: \
+$SS = \sum_{j=1}^k{n_j(\bar{X_j} - \bar{X})^2}$$
+
+```{r}
+# Variables
+vars = c(3.6,4.8,5.3)
+ns = c(12,14,11)
+N = sum(ns)
+mus = c(25.2,32.6,28.1)
+df_error = N-3
+df_treat = 2 # 3-1
+# Compute MS treat
+SS = vars * (ns-1)
+SS_error = sum(SS)
+MS_error = SS_error / df_error
+# Compute MS error
+grand_mu = sum(mus*ns)/N
+SS_treat = sum(ns*(mus-grand_mu)^2)
+MS_treat = SS_treat / df_treat
+
+#Calculate F statistic and pv
+F = MS_treat / MS_error
+pv = 1-pf(F,df1=df_treat,df2=df_error)
+```
+
+We calculated the F statistic for the one-way Anova analysis to see if any of the group means differ. We found that $F_{(2,34)} = `r p(F)`, p < .001$.
+
+### b
+
+Now we want to see whether using two orthogonal contrasts we can find differences between manufacturing vs. marketing and research, and marketing vs. research. Given that order of variables (Man, Mar, Res) the contrasts are (2,-1,-1) and (0,-1,1).
+
+```{r}
+c1 = c(2,-1,-1)
+c2 = c(0,-1,1)
+dot = c1%*%c2
+```
+
+The dot product was `r p(dot)`, therefore the contrasts are orthogonal. Let's use the contrasts t oanalyze the data.
+
+```{r}
+# Get the contrast weighted means
+a1 = sum(c1 * mus)
+a2 = sum(c2 * mus)
+# Compare these to zero
+se1 = sqrt(MS_error * sum(c1^2 / ns))
+se2 = sqrt(MS_error * sum(c2^2 / ns))
+t1 = a1/se1
+t2 = a2/se2
+p1 = 2*pt(t1,df_error)
+p2 = 2*pt(t2,df_error)
+```
+
+We found that the manufacturing scores were significantly lower than the other groups $t(34) = `r p(t1)`, p < .001$. We also found that the research scores were significanlty lower than the marketing scores, $t(34) = `r p(t2)`, p <.001$.
+
+### QUESTION G
+
+Setup
+
+```{r}
+tab = as.table(cbind(c(10.41,3.59,7.00),c(3.40,3.18,3.29),c(6.90,3.38,5.14)))
+dimnames(tab)[[1]] = c("Low-Soc","High-Soc","All")
+dimnames(tab)[[2]] = c("Low-Self","High-Self","All")
+N=24
+tab
+```
+
+Necessary calculations:
+```{r}
+SS_g = 272.60-49.8
+MS_g = 222.8 / 3
+MS_e = 49.8 / 20
+F = MS_g / MS_e
+pv = 1-pf(F,3,20)
+```
+
+The missing values in the table are as folows:
+
+Analysis of Variance for Stress
+Source  DF  SS      MS    F     P
+Group    3  222.8   74.27 29.83 < .001 ***
+Error   20  49.8    2.49
+Total   23  272.60
+
+We found that stress was not the same for all groups, F(3,20) = 29.83, p < .001.
+
+###c
+
+a = contrast
+l = sum(a * x)
+se^2 = MS_w * sum(a^2/n)
+t(N-k) = l/se
+F(1,N-k) = t^2
+
+This contrast looks at the for interactions between social support and self concept. We can think of this contrast as \
+(m1 - m2) - (m3 - m4) \
+Or in other words, (effect of social support at low self concept) - (effect of social support at high self concept), so it's difference between the effect of social support at different levels of self concept.
+
+```{r}
+a = c(1,-1,-1,1)
+mus = c(10.4,3.6,3.4,3.2)
+l = sum(a*mus)
+se = sqrt(MS_e*sum(a^2/6))
+t = l/se
+pv = 1-pt(t,N-4)
+```
+
+We found that there was a significant interaction between social support and self concept, and that at low self concept social support causes a larger increase in stress than at high self concept.
+
+### d
+
+```{r}
+MS_e / 12
+```
+
+We found that the standard error of the high self-concept group mean of 3.29 was .2075.
+
+### e
+
+We have shown that stress level depended on both self concept and social support, specifically, only when both self concept and social support were low did people experience high stress. But on the other hand, when both self concept and social support were high participants didn't experience an additive reduction in stress compared to just one of the variables. The results suggest that low stress bottoms out, but that either social support or self concept can both reduce stress from its peak.
+

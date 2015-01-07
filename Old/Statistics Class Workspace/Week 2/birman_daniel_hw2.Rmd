@@ -1,0 +1,289 @@
+---
+title: "birman_daniel_hw2"
+author: "Dan Birman"
+date: "Wednesday, October 01, 2014"
+output: html_document
+---
+
+Definitions
+
+```{r}
+library(ggplot2)
+apaprint = function(stat_obj) {
+  # Break down by category
+  switch(class(stat_obj),
+         "htest" = phtest(stat_obj),
+         "lm" = plm(stat_obj),
+         "glm" = pglm(stat_obj))
+}
+
+pglm = function(s) {
+}
+
+plm = function(s) {
+  sm = summary(s)
+  f = sm$fstatistic
+  p = unname(pf(f[1],f[2],f[3],lower.tail=F))
+  r2 = sm$r.squared
+  sprintf("*F* (%.0f, %.0f) = %.2f, *p* = %.3f, adjusted R2 = %.2f",f[2],f[3],f[1],p,r2)
+}
+
+phtest = function(s) {
+  switch(s["method"]$method,
+         "One Sample t-test" = pttest(s),
+         "Welch Two Sample t-test" = pttest(s),
+         "Chi-squared test for given probabilities" = pchisq(s),
+         "One-way analysis of means (not assuming equal variances)" = panova(s)
+         )
+}
+
+panova = function(s) {
+  basicprint(s,"F")
+}
+
+pchisq = function(s) {
+  basicprint(s,"$\\chi^2$")
+}
+
+pttest = function(s) {
+  basicprint(s,"t")
+}
+
+basicprint = function(s,st) {
+  sprintf("*%s* (%.0f) = %.2f, *p* = %0.3f",st,s$parameter,s$statistic,s$p.value)
+}
+library(plyr)
+pp <- function(x) {round(x, digits=3)}
+p <- function(x) {round(x, digits=2)}
+```
+
+
+###1
+
+Using the sample we will calculate the summary statistics by hand. We will also perform a check that they are correct.
+
+```{r}
+sample = c(1,1,0)
+xs = sum(sample) / length(sample)
+print(xs==mean(sample))
+SSs = sum((sample - xs)^2)
+dfs = length(sample) - 1
+vars = SSs / dfs
+print(round(vars,digits=3) == round(var(sample),digits=3))
+ss = sqrt(vars)
+print(round(ss,digits=3) == round(sd(sample),digits=3))
+ses = ss / sqrt(length(sample))
+```
+
+The mean was found to be `r p(xs)` with SS `r p(SSs)`, variance `r p(vars)`, standard deviation `r p(ss)`, and standard error `r p(ses)`.
+
+###6
+
+Let's load the data from the study on memory biases: 
+
+Fields:
+
+    Type: Experimental condition (1=free, 2=biased, 3=varied)
+    Pasthap: Rating of recalled happiness
+    Responsible: Self-reported feelings of responsibility
+    Futurehapp: Rating of expected future happiness
+    FTP: Future time perspective
+    complain: Yes/no response for whether participants considered complaining
+
+```{r}
+data = read.csv("http://web.stanford.edu/class/psych252/_downloads/hw2data.csv")
+data$Type = factor(data$Type, levels = c(1,2,3), labels=c("Free","Biased","Varied"))
+data$complain = factor(data$complain, levels = c(0,1),labels = c("yes","no"))
+```
+
+I'm going to do some re-organization now following the tips in **3**.
+
+```{r}
+data$Pasthapp = findInterval(data$Pasthapp, c(4,7,10,13))-2
+data$Futurehapp = findInterval(data$Futurehapp, c(4,7,10,13))-2
+data$Responsible = findInterval(data$Responsible, c(6,11,16))
+data$FTP = findInterval(data$FTP,c(4,7,10,13))
+```
+
+**Correlation between Past and Future Happiness**
+
+Let's start by looking at the data (note: the points are jittered to allow spacing since the variables are discrete).
+
+```{r}
+# Calculate correlations
+cors = ddply(data,c("Type"),summarise, cor=round(cor(Pasthapp,Futurehapp),2), p=round(cor.test(Pasthapp,Futurehapp)$p.value,2))
+
+# Plotting
+ggplot(data,aes(Pasthapp,Futurehapp,size=2),) +
+  scale_x_continuous(limits=c(-2.5,2.5)) +
+  geom_jitter(position=position_jitter(width = .1, height=.1)) +
+  theme(legend.position="none") +
+  # Note, geom_smooth defaults to 95% CI error bars
+  geom_smooth(size=1,method="lm",col="orange") +
+  geom_text(data=cors,aes(label=paste("r=",cors$cor,sep="")),x=-1,y=1) +
+  geom_text(data=cors,aes(label=paste("p=",cors$p,sep="")),x=-1,y=.8) +
+  facet_grid(.~Type)
+```
+
+As the plot shows there are strong correlations between Past and Future happiness in the Free and Varied  conditions and only a weak correlation in the Biased condition, r=`r cors[,2]`, *p* = `r cors[,3]`, Free, Biased, Varied, respectively. Because the Biased condition patricipants were pushed to recall a very negative event in the past, unlike the Free and Varied conditions, they appear to have also been most likely to project that negative aspect onto their future expectations.
+
+###7
+
+Lets look at the influence of memory group alone on Future Happiness. First, let's look at the data and consider whether they are uniformly distributed.
+
+```{r}
+boxplot(Futurehapp~Type,data=data)
+```
+
+There seems to be a pretty strong skew towards the positive values (note, we have already adjusted the values according to the criteria in **3**). Realistically a box plot is only for visualization, so let's check definitively for a skew.
+
+```{r}
+library(moments)
+skews = ddply(data,c("Type"),summarise,cor=round(skewness(Futurehapp),2))
+print(skews)
+```
+
+There is a right-ward skew in some of the data, we might consider log-transforming to avoid this. Let's see if this fixes the skew.
+
+```{r}
+# Note, Futurehapp was artifically scaled originally, I remove that here before calculating the skews
+skews2 = ddply(data,c("Type"),summarise,cor=round(skewness(log(Futurehapp+3)),2))
+print(skews2)
+```
+
+This does seem to reduce the skew to some extent, but certainly not definitively. To test whether this reduces the non-normality we can compare the non-log transformed data to the log transform using a Shapiro-Wilk test.
+
+```{r}
+# First get the normality for the original dat
+norms = ddply(data,c("Type"),summarise,p1 = shapiro.test(Futurehapp)$p.value,plog = shapiro.test(log(Futurehapp+3))$p.value)
+print(norms)
+```
+
+The obtained p-values suggest that neither the original data nor the log transformed data are particularly normal. Note that the Shapiro-Wilk test is extremeley sensitive to the tails in small samples, so we expect in a situation like this to have very small p-values. Because the log transformation didn't substantially improve the data we will continue with the non-log transformed data, since log-transforming can introduce unexpected changes to results when used unnecessarily.
+
+```{r}
+rs1 = lm(Futurehapp~Type,data)
+contrasts(data$Type, 2) = "contr.treatment"
+summary(rs1)
+rs2 = oneway.test(Futurehapp ~ Type,data,var.equal=F)
+print(rs2)
+```
+
+Both analyses suggest the same overall result, there is no significant overall trend for Futurehapp and Memory Group (Type), LM: `r apaprint(rs1)`, OneWay: `r apaprint(rs2)`. Overall this suggests that our earlier observation that correlations between Future and Past happiness for different Memory Groups (Type) varied seems to be an interaction effect and can't be explaiend by the underlying statistics of the Future happiness measure alone.
+
+###9
+
+We explored how Futurehapp depends on Pasthapp and "sense of responsibility". Let's see whether logistic regression captures the dependence of whether participants considered complaining (complain) and their sense of responsibility (Responsible) for the situation. We might predict that a low sense of responsibility would correlate with a higher likelihood of considering a complaint. The general linear model can be used for this analysis if we use the binomial distribution (since Complain is a yes/no response).
+
+```{r}
+#SIDENOTE: This dataset has capitalization inconsistencies... That's my Reponsible complain[t].
+rs1 = glm(complain ~ Responsible,family=binomial,data=data)
+summary(rs1)
+respcoef = coef(rs1)["Responsible"]  
+CI95 = confint(rs1, parm = "Responsible")
+rs_s = cat("\n Effect of Responsible on Complain: ", respcoef, "\n 95% CI: ", CI95,"\n")
+odds = exp(respcoef)/(1-exp(respcoef))
+```
+
+It looks like our expectation was correct, there is a significant relationship between responsibility and likelihood of complaining, 95% CI [`r round(CI95,2)`], Beta=`r p(respcoef)`, Z=-3.27, *p*=.001.
+
+```{r}
+xr = seq(0,3,.25)  	# possible values of Responsible
+yc = predict(rs1, data.frame(Responsible = xr), type = 'response')	# predicted P(Complain) for given levels of Responsible
+plot(data$Responsible, as.numeric(data$complain)-1, type = 'p', main = 'P(Complain) vs Responsible', xlab='Responsible',ylab='P(Complain)')
+lines(xr, yc)			# plots predicted curve
+```
+
+Since this is a logistic regression the coefficient `r p(respcoef)` can't be easily interpreted alone, but it does suggest a negative correlation between Responsibility ratings and likelihood of complaints. As we speculated before the analysis this is probably due to how complaining is only effective when you perceive someone else as being responsible.
+
+We can try to recover how much the probability of complaint depends on responsibility ratings by inverting the equation:
+$$log(p/(1-p)) = \beta0 + \beta1*Responsible$$
+We can do this for just the coefficient of Responsible:
+$$log(odds) = log(p/(1-p)) = -.8229$$
+$$odds = p/(1-p) = 0.44$$
+$$prob = p = 0.44 / 1.44 = 0.31$$
+
+Which suggests that the probability of complaining vs. not complaining decrease by 30% for each increase in the responsibility rating.
+
+###10
+
+As the question proposes let's define a population with some specific statistics:
+
+```{r}
+psig = 2
+H0_mu = 4
+H1_mu = 4.4
+N = 96
+sig_level = .05
+```
+
+An interesting way to calculate the power of this test might be to plot the distributions and look at the overlap, so that we can get a rough estimate of what we're looking for.
+
+```{r}
+# Note we use the standard error, since we are comparing means
+sample_se = psig / sqrt(N)
+# Sample two distributions
+x = 300:550/100
+d0 = dnorm(x,mean=H0_mu,sd=sample_se)
+d1 = dnorm(x,mean=H1_mu,sd=sample_se)
+dat = data.frame(null=d0,alt=d1,x=x)
+val_0 = qnorm(.05,mean=H0_mu,sd=sample_se,lower.tail=F)
+ggplot() + 
+  geom_line(data=dat,aes(x,null,color="red")) +
+  geom_line(data=dat,aes(x,alt,color="green")) +
+  xlab("Values") + ylab("Density") +
+  geom_vline(xintercept=val_0,color="blue") +
+  geom_ribbon(aes(x=dat$x[dat$x>val_0],ymin=0,ymax=dat$null[dat$x>val_0]),alpha=0.2,fill="darkred") +
+  geom_ribbon(aes(x=dat$x[dat$x>val_0],ymin=0,ymax=dat$alt[dat$x>val_0]),alpha=0.2,fill="51") +
+  scale_color_manual(name="Hypothesis",values=c("red"="red","green"="green"),labels=c("Alternative","Null"))
+power1 = pnorm(val_0,mean=H1_mu,sd=sample_se,lower.tail=F)
+
+x = seq(.3,5.5,.01)
+d0 = dnorm(x,mean=H0_mu,sd=sample_se)
+dat data.frame(null=d0,x=x)
+
+ggplot() +
+  geom_line(data=dat,aes(x,null,color="red")) +
+  geom_vline(xintercept=4,color="blue") +
+  geom_ribbon(aes(x=dat$x[dat$x>4],ymin=0,ymax=dat$null[dat$x>4]),alpha=.2) +
+  scale_color_manual(name="Title",values=c("red"="red","blue"="blue"),labels=c("Null","Average")) +
+  theme_classic()
+
+g = ggplot() + theme_classic()
+
+g + geom_point()
+
+```
+
+Now we can see that our power (assuming H1 is true, what is the chance the we correctly reject H0) is reasonably high. If H0 is true and we set our significance level to *p*=.05, then we need to see a sample mean of at least `r p(val_0)` to reject the null hypothesis (red shaded area). The likelihood of this happening (the power) is equal to the probability that if that H1 is true our sample mean exceeds `r p(val_0)` which is `r p(power1)` (green shaded area).
+
+###12
+
+```{r}
+chg_cbt = c(13,21,9,12,9,2,3,6,4,7)
+chg_dbt = c(5,1,2,2,6,0,0,4)
+dat = data.frame(rbind(cbind(0,chg_cbt),cbind(1,chg_dbt)))
+names(dat) = c("Group","Change")
+dat$Group = factor(dat$Group,levels=c(0,1),labels=c("CBT","DBT"))
+ggplot(dat,aes(Group,Change)) + geom_boxplot()
+```
+
+We have some data on the change in a depressive symptoms questionnaire score. As we can see the CBT seems to result in a larger increase of scores than DBT, but we should check whether these results are significant or significantly different. First let's see if individually these results are significant.
+
+```{r}
+rs_cbt = t.test(chg_cbt)
+rs_dbt = t.test(chg_dbt)
+print(rs_cbt)
+print(rs_dbt)
+```
+
+Both results were significant at *p*=.05. CBT, `r apaprint(rs_cbt)`. DBT, `r apaprint(rs_dbt)`.
+
+This suggests that both therapies are effective but not whether they differ in their success rates. Let's look at this:
+
+```{r}
+rs_com = t.test(chg_cbt,chg_dbt)
+print(rs_com)
+```
+
+We find now that our results are significantly different and that the change in scores for CBT is greater than for DBT, 95% CI of the estimated differences [`r rs_com$conf.int`], `r apaprint(rs_com)`.
