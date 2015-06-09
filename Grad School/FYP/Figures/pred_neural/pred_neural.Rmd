@@ -83,7 +83,7 @@ y6 = rmax*c^n/(c^n+c50^n) + b + .05
 b = .2
 n = 5
 y7 = (rmax-.3)*c^n/(c^n+(c50)^n) + b
-y8 = (rmax-.3)*c^n/(c^n+(c50)^n) + b
+y8 = (rmax-.3)*c^n/(c^n+(c50)^n) + b + .05
 
 
 d = data.frame(c=c,y1=y1,y2=y2,y3=y3,y4=y4,y5=y5,y6=y6,y7=y7,y8=y8)
@@ -109,8 +109,8 @@ p1 = ggplot(d) +
 p2 = ggplot(d) +
   geom_line(aes(c,y5),color='black',size=2) + 
   geom_line(aes(c,y6),color='grey',size=2) + 
-  geom_line(aes(c,y7),color='turquoise2',size=2) + 
-  geom_line(aes(c,y8),color='turquoise1',size=2) + 
+  geom_line(aes(c,y7),color='red',size=2) + 
+  geom_line(aes(c,y8),color='pink',size=2) + 
   theme_bw() +
   scale_x_continuous(breaks=c(0,50,100)) +
   scale_y_continuous(breaks=c()) +
