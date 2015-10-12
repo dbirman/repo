@@ -1,0 +1,28 @@
+Outline
+
+Intro/problem setup
+ - phil doesn't give good solutions
+ - we run into a wall the hrd prob
+ - how do we get around the wall?
+ - ecological relevance? function/fitness?
+ - neurons?
+History
+ - undergrad interest 1 para
+ - work w/ john, interest in connecting neural measures -> behavior
+Grad work w/ Justin
+ - how do we isolate the right neural activity
+Impact
+ - we need a model of mind
+ - we can't solve hrd prob w/ phil, need neural
+
+ Proposal
+
+ One unsolved prob
+  - how does attention link to perception
+  - sensory enhancement vs. gating function
+ Project
+  - test this by looking at what neural change we need to model to predict behavior
+  - prediction of model -> tms MT has no effect, test this
+ Impact
+  - we have to solve the hrd prob, neuro gives us a possible window, but we have to understand the loa of networks
+
